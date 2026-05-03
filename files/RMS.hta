@@ -1,0 +1,2211 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>RMS - Rack Manager System</title>
+
+<HTA:APPLICATION
+    ID="RMS"
+    APPLICATIONNAME="RMS"
+    BORDER="none"
+    BORDERSTYLE="normal"
+    CAPTION="no"
+    MAXIMIZEBUTTON="no"
+    MINIMIZEBUTTON="no"
+    SHOWINTASKBAR="yes"
+    SINGLEINSTANCE="no"
+    SYSMENU="yes"
+    WINDOWSTATE="maximize"
+/>
+
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+<style>
+    /* ============================================================
+       RMS - Rack Manager System
+       Coordination tool for a server hardware testing facility.
+       Single-file HTA (HTML Application) targeting Windows + IE engine.
+       Multi-user real-time sync via shared filesystem JSON files.
+       ============================================================ */
+
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:'Segoe UI',Tahoma,sans-serif; background:#06060e; color:#e8e8f8; height:100vh; overflow:hidden; }
+    body::before { content:''; position:fixed; top:-40%; left:-20%; width:80%; height:80%; background:radial-gradient(ellipse,rgba(74,127,255,0.06) 0%,transparent 70%); pointer-events:none; z-index:0; }
+    body::after  { content:''; position:fixed; bottom:-30%; right:-15%; width:70%; height:70%; background:radial-gradient(ellipse,rgba(136,85,255,0.05) 0%,transparent 70%); pointer-events:none; z-index:0; }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    .hdr { position:relative; height:78px; background:rgba(12,12,24,0.85); border-bottom:1px solid rgba(255,255,255,0.04); display:flex; align-items:center; justify-content:space-between; padding:0 28px; z-index:10; }
+    .hdr-glow { position:absolute; bottom:0; left:0; right:0; height:2px; background:linear-gradient(90deg,transparent 2%,#4a7fff 20%,#8855ff 50%,#00d8b8 80%,transparent 98%); opacity:0.7; }
+    .hdr-brand { display:flex; align-items:center; gap:13px; }
+    .hdr-icon { width:40px; height:40px; border-radius:10px; background:linear-gradient(135deg,#4a7fff,#8855ff); display:flex; align-items:center; justify-content:center; font-size:17px; font-weight:900; color:#fff; box-shadow:0 0 24px rgba(74,127,255,0.5),0 0 60px rgba(136,85,255,0.15); }
+    .hdr-texts { display:flex; flex-direction:column; }
+    .hdr-title { font-size:18px; font-weight:700; letter-spacing:5px; color:#ffffff; }
+    .hdr-sub { font-size:9px; font-weight:600; letter-spacing:3.5px; color:#555570; margin-top:1px; }
+    .hdr-right { display:flex; align-items:center; gap:16px; }
+
+    /* Lock status indicator (top-right) */
+    .lock-chip { font-size:10px; font-weight:700; letter-spacing:1.5px; font-family:'Courier New',monospace; color:#44445a; background:rgba(20,20,35,0.6); border:1px solid rgba(255,255,255,0.05); border-radius:20px; padding:5px 13px; }
+    .lock-chip.locked { color:#ffcc44; border-color:rgba(255,204,68,0.35); background:rgba(255,204,68,0.06); }
+    .lock-chip.err    { color:#ff4444; border-color:rgba(255,68,68,0.45); background:rgba(255,40,40,0.08); }
+
+    /* "LIVE" pulse indicator */
+    .live-chip { display:flex; align-items:center; gap:6px; background:rgba(20,220,100,0.06); border:1px solid rgba(20,220,100,0.2); border-radius:20px; padding:6px 14px; font-size:11px; font-weight:700; letter-spacing:2px; color:#14dc64; }
+    .live-dot { width:7px; height:7px; border-radius:50%; background:#14dc64; box-shadow:0 0 12px #14dc64,0 0 24px rgba(20,220,100,0.3); animation:blink 2s ease-in-out infinite; margin-right:8px; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+    /* Sync progress bar (under header) */
+    .pbar { height:2px; background:#06060e; }
+    .pbar-f { height:100%; width:0%; background:linear-gradient(90deg,#4a7fff,#8855ff,#00d8b8); }
+
+    /* ── Main layout ────────────────────────────────────────── */
+    .wrap { display:flex; height:calc(100vh - 80px); overflow:hidden; position:relative; z-index:1; }
+    .main-outer { flex:1; position:relative; overflow:hidden; min-width:0; }
+    .main { position:absolute; top:0; left:0; bottom:0; right:-20px; padding:22px 30px 22px 26px; overflow-y:scroll; overflow-x:hidden; display:flex; flex-direction:column; gap:38px; scrollbar-face-color:#06060e; scrollbar-track-color:#06060e; scrollbar-arrow-color:#06060e; scrollbar-shadow-color:#06060e; scrollbar-darkshadow-color:#06060e; scrollbar-highlight-color:#06060e; scrollbar-3dlight-color:#06060e; }
+
+    /* Custom main-area scrollbar (native IE scrollbar is hidden via -20px right) */
+    .scr-bar { position:absolute; top:0; right:3px; bottom:0; width:6px; z-index:200; background:transparent; pointer-events:none; }
+    .scr-handle { position:absolute; left:0; right:0; min-height:28px; background:linear-gradient(180deg,#4a7fff 0%,#8855ff 55%,#00d8b8 100%); border-radius:4px; box-shadow:0 0 10px rgba(74,127,255,0.7),0 0 18px rgba(136,85,255,0.4); cursor:pointer; opacity:0.92; pointer-events:auto; }
+
+    /* Right side panel (palette + chat) */
+    .side { width:290px; background:rgba(12,12,24,0.7); border-left:1px solid rgba(255,255,255,0.04); padding:0; overflow:hidden; flex-shrink:0; display:flex; flex-direction:column; }
+    .side-palette-area { padding:0; flex-shrink:0; }
+    .side-chat-area { flex:1; display:flex; flex-direction:column; border-top:1px solid rgba(255,255,255,0.05); overflow:hidden; min-height:0; }
+
+    /* Chat custom scrollbar */
+    .chat-scroll-wrap { flex:1; height:0; display:flex; flex-direction:row; overflow:hidden; }
+    .chat-clip { flex:1; overflow:hidden; position:relative; }
+    .chat-messages-outer { position:absolute; top:0; left:0; right:0; }
+    .chat-scr-col { width:18px; display:flex; flex-direction:column; background:#0a0a1a; border-left:1px solid rgba(255,255,255,0.07); user-select:none; }
+    .chat-scr-btn { width:18px; height:18px; background:#13132a; border:none; border-bottom:1px solid rgba(255,255,255,0.07); color:#4a7fff; font-size:10px; cursor:pointer; display:block; text-align:center; line-height:18px; padding:0; }
+    .chat-scr-btn:last-child { border-bottom:none; border-top:1px solid rgba(255,255,255,0.07); }
+    .chat-scr-btn:hover { background:#1a1a3a; }
+    .chat-scr-track { flex:1; position:relative; background:#0a0a1a; cursor:pointer; }
+    .chat-scr-handle { position:absolute; left:2px; right:2px; min-height:20px; background:linear-gradient(180deg,#4a7fff,#8855ff); border-radius:3px; cursor:pointer; }
+
+    /* ── Section panels (one per test stage) ────────────────── */
+    .panel { background:rgba(14,14,28,0.65); border:1px solid rgba(255,255,255,0.05); border-radius:16px; overflow:hidden; box-shadow:0 4px 30px rgba(0,0,0,0.25); flex-shrink:0; margin-bottom:18px; }
+    .panel-head { padding:16px 22px; border-bottom:1px solid rgba(255,255,255,0.04); display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.015); }
+    .ph-left { display:flex; align-items:center; gap:8px; }
+
+    /* Color-coded dot per section (matches badge colors) */
+    .p-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; margin-right:10px; }
+    .p-dot-staging  { background:#4a7fff; box-shadow:0 0 14px rgba(74,127,255,0.9),0 0 30px rgba(74,127,255,0.3); }
+    .p-dot-delta    { background:#ffcc44; box-shadow:0 0 14px rgba(255,204,68,0.8),0 0 30px rgba(255,204,68,0.2); }
+    .p-dot-transfer { background:#00d8b8; box-shadow:0 0 14px rgba(0,216,184,0.8),0 0 30px rgba(0,216,184,0.2); }
+    .p-dot-gamma    { background:#1a8a1a; box-shadow:0 0 14px rgba(26,138,26,0.9),0 0 30px rgba(26,138,26,0.3); }
+    .p-dot-alpha    { background:#6ddc6d; box-shadow:0 0 14px rgba(109,220,109,0.9),0 0 30px rgba(109,220,109,0.3); }
+    .p-dot-beta     { background:#ff4444; box-shadow:0 0 14px rgba(255,68,68,0.9),0 0 30px rgba(255,68,68,0.3); }
+
+    .p-title { font-size:13px; font-weight:700; letter-spacing:3px; color:#d8d8f0; font-family:'Courier New',monospace; }
+
+    /* Section badge labels */
+    .bdg { font-size:9px; font-weight:800; letter-spacing:1.5px; padding:3px 10px; border-radius:6px; }
+    .bdg-staging  { background:rgba(74,127,255,0.12); color:#7aacff; border:1px solid rgba(74,127,255,0.3); }
+    .bdg-delta    { background:rgba(255,204,68,0.1); color:#ffd966; border:1px solid rgba(255,204,68,0.3); }
+    .bdg-transfer { background:rgba(0,216,184,0.1); color:#00d8b8; border:1px solid rgba(0,216,184,0.3); }
+    .bdg-gamma    { background:rgba(26,138,26,0.12); color:#aaffaa; border:1px solid rgba(26,138,26,0.35); }
+    .bdg-alpha    { background:rgba(109,220,109,0.12); color:#8ded8d; border:1px solid rgba(109,220,109,0.35); }
+    .bdg-beta     { background:rgba(255,68,68,0.12); color:#ff8888; border:1px solid rgba(255,68,68,0.35); }
+
+    .p-count { font-size:12px; font-weight:700; color:#8888aa; font-family:'Courier New',monospace; background:rgba(20,20,35,0.6); border:1px solid rgba(255,255,255,0.05); border-radius:8px; padding:4px 14px; }
+
+    /* Input row inside each panel */
+    .irow { padding:14px 22px; border-bottom:1px solid rgba(255,255,255,0.03); display:flex; align-items:center; gap:10px; background:rgba(0,0,0,0.2); }
+    input.tin { flex:1; background:rgba(14,14,28,0.8); border:1px solid rgba(255,255,255,0.06); border-radius:10px; padding:11px 16px; color:#e8e8f8; font-family:'Segoe UI',Tahoma,sans-serif; font-size:14px; font-weight:500; outline:none; transition:border-color 0.2s,box-shadow 0.2s; }
+    input.tin::placeholder { color:#3a3a58; }
+    input.tin:focus { border-color:rgba(74,127,255,0.5); box-shadow:0 0 0 3px rgba(74,127,255,0.1); }
+    .teal-panel input.tin:focus { border-color:rgba(0,216,184,0.5); box-shadow:0 0 0 3px rgba(0,216,184,0.08); }
+    .tin-hint { font-size:10px; font-weight:700; color:#555570; white-space:nowrap; font-family:'Courier New',monospace; background:rgba(20,20,35,0.5); border:1px solid rgba(255,255,255,0.05); border-radius:7px; padding:6px 11px; }
+    .tin-sep { font-size:14px; font-weight:700; color:#555570; padding:0 4px; }
+
+    /* Buttons */
+    .btn { border:none; border-radius:10px; padding:11px 22px; color:#fff; font-family:'Segoe UI',Tahoma,sans-serif; font-size:12px; font-weight:800; letter-spacing:1.5px; cursor:pointer; white-space:nowrap; transition:opacity 0.15s,transform 0.12s,box-shadow 0.2s; }
+    .btn:hover { opacity:0.88; transform:translateY(-1px); }
+    .btn:active { transform:scale(0.96); }
+    .btn-b { background:linear-gradient(135deg,#4a7fff 0%,#6a5fff 50%,#8855ff 100%); box-shadow:0 4px 20px rgba(74,127,255,0.35),0 0 40px rgba(136,85,255,0.1); }
+
+    /* Transfer-section type selector */
+    select.transfer-type-sel { background:rgba(14,14,28,0.9); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:10px 14px; color:#e8e8f8; font-family:'Courier New',monospace; font-size:12px; font-weight:700; letter-spacing:1px; outline:none; cursor:pointer; min-width:110px; transition:border-color 0.2s,box-shadow 0.2s; -webkit-appearance:none; appearance:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238888aa'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 10px center; padding-right:28px; }
+    select.transfer-type-sel:focus { border-color:rgba(0,216,184,0.5); box-shadow:0 0 0 3px rgba(0,216,184,0.08); }
+    select.transfer-type-sel option { background:#0e0e1c; color:#e8e8f8; }
+    select.transfer-type-sel.placeholder { color:#3a3a58; }
+
+    /* Transfer "Add" button (color depends on selected target type) */
+    .btn-transfer-add { border:none; border-radius:10px; padding:11px 18px; color:#fff; font-family:'Segoe UI',Tahoma,sans-serif; font-size:12px; font-weight:800; letter-spacing:1.5px; cursor:pointer; white-space:nowrap; transition:opacity 0.15s,transform 0.12s,box-shadow 0.2s; opacity:0.35; pointer-events:none; }
+    .btn-transfer-add.active { opacity:1; pointer-events:auto; }
+    .btn-transfer-add:hover { opacity:0.88; transform:translateY(-1px); }
+    .btn-transfer-add:active { transform:scale(0.96); }
+    .btn-transfer-alpha { background:linear-gradient(135deg,#6ddc6d 0%,#4cc94c 100%); box-shadow:0 4px 20px rgba(76,201,76,0.4); color:#002200; }
+    .btn-transfer-beta  { background:linear-gradient(135deg,#ff8800 0%,#ff6600 100%); box-shadow:0 4px 20px rgba(255,136,0,0.45); color:#1a0800; }
+    .btn-transfer-gamma { background:linear-gradient(135deg,#1a8a1a 0%,#126612 100%); box-shadow:0 4px 20px rgba(26,138,26,0.45); color:#aaffaa; }
+    .btn-transfer-delta { background:linear-gradient(135deg,#fffe00 0%,#ffe800 100%); box-shadow:0 4px 20px rgba(255,254,0,0.45); color:#1a1a00; }
+
+    /* Rack grid (one panel = one grid of rack buttons) */
+    .rgrid { padding:10px 20px; min-height:10px; }
+    .r-empty { width:100%; text-align:center; padding:30px; font-size:11px; letter-spacing:3px; color:#222240; font-family:'Courier New',monospace; }
+
+    /* Single rack button */
+    .rb { position:relative; min-width:95px; height:72px; border-radius:14px; display:inline-block; text-align:center; vertical-align:top; cursor:pointer; border:none; margin:0 10px 22px 0; transition:transform 0.15s,box-shadow 0.2s; }
+    .rb:hover { transform:translateY(-3px) scale(1.03); }
+    .rb:active { transform:scale(0.95); }
+    .rb-num { font-size:22px; font-weight:800; font-family:'Courier New',monospace; color:#fff; line-height:1; text-shadow:0 2px 8px rgba(0,0,0,0.6); display:block; padding-top:14px; }
+    .rb-own { font-size:11px; font-weight:800; color:rgba(255,255,255,0.95); letter-spacing:0.5px; text-shadow:0 1px 4px rgba(0,0,0,0.6); max-width:85px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; margin-top:6px; }
+
+    /* Per-section "free" (unclaimed) button styling */
+    .rb-staging-free        { background:linear-gradient(145deg,#2a3a6a 0%,#1a2a50 100%); box-shadow:0 4px 20px rgba(42,58,106,0.5),inset 0 1px 0 rgba(255,255,255,0.08); border:1px solid rgba(74,127,255,0.2); }
+    .rb-delta-free          { background:linear-gradient(145deg,#0d4a44 0%,#073530 100%); box-shadow:0 4px 20px rgba(0,185,160,0.25),inset 0 1px 0 rgba(255,255,255,0.08); border:1px solid rgba(0,216,184,0.2); }
+    .rb-transfer-alpha-free { background:linear-gradient(145deg,#1a4a1a 0%,#0d330d 100%); box-shadow:0 4px 20px rgba(76,201,76,0.25),inset 0 1px 0 rgba(255,255,255,0.08); border:1px solid rgba(76,201,76,0.3); }
+    .rb-transfer-beta-free  { background:linear-gradient(145deg,#3a1e00 0%,#2a1200 100%); box-shadow:0 4px 20px rgba(255,136,0,0.28),inset 0 1px 0 rgba(255,255,255,0.08); border:1px solid rgba(255,136,0,0.35); }
+    .rb-transfer-gamma-free { background:linear-gradient(145deg,#062a06 0%,#031803 100%); box-shadow:0 4px 20px rgba(26,138,26,0.3),inset 0 1px 0 rgba(255,255,255,0.08); border:1px solid rgba(26,138,26,0.35); }
+    .rb-transfer-delta-free { background:linear-gradient(145deg,#2e2e00 0%,#1e1e00 100%); box-shadow:0 4px 20px rgba(255,254,0,0.22),inset 0 1px 0 rgba(255,255,255,0.08); border:1px solid rgba(255,254,0,0.32); }
+    .rb-gamma-free          { background:linear-gradient(145deg,#062a06 0%,#031803 100%); box-shadow:0 4px 20px rgba(26,138,26,0.3),inset 0 1px 0 rgba(255,255,255,0.08); border:1px solid rgba(26,138,26,0.35); }
+    .rb-alpha-free          { background:linear-gradient(145deg,#1a4a1a 0%,#0d330d 100%); box-shadow:0 4px 20px rgba(109,220,109,0.25),inset 0 1px 0 rgba(255,255,255,0.08); border:1px solid rgba(109,220,109,0.3); }
+    .rb-beta-free           { background:linear-gradient(145deg,#4a1a1a 0%,#320e0e 100%); box-shadow:0 4px 20px rgba(255,68,68,0.2),inset 0 1px 0 rgba(255,255,255,0.08); border:1px solid rgba(255,68,68,0.25); }
+    .rb-claimed             { border:1px solid rgba(255,255,255,0.12); box-shadow:0 4px 24px rgba(0,0,0,0.3); }
+
+    /* Transfer pair button (wider, shows "from -> to") */
+    .rb-pair { position:relative; min-width:130px; height:72px; border-radius:14px; display:inline-block; text-align:center; vertical-align:top; cursor:pointer; border:none; margin:0 10px 12px 0; transition:transform 0.15s,box-shadow 0.2s; }
+    .rb-pair:hover { transform:translateY(-3px) scale(1.03); }
+    .rb-pair:active { transform:scale(0.95); }
+    .rb-pair-num { font-size:13px; font-weight:800; font-family:'Courier New',monospace; color:#fff; line-height:1; text-shadow:0 2px 8px rgba(0,0,0,0.6); display:block; padding-top:12px; letter-spacing:0.5px; }
+    .rb-pair-own { font-size:9px; font-weight:700; color:rgba(255,255,255,0.9); letter-spacing:0.5px; text-shadow:0 1px 4px rgba(0,0,0,0.6); max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; margin-top:4px; }
+
+    /* "Pin" badge for completed/claimed rack states */
+    .rb-pin { position:absolute; top:-7px; right:-7px; width:22px; height:22px; border-radius:50%; border:2px solid #06060e; display:flex; align-items:center; justify-content:center; font-size:9px; font-weight:900; cursor:pointer; z-index:5; transition:transform 0.15s,box-shadow 0.2s; }
+    .rb-pin:hover { transform:scale(1.3); }
+    .rb-pin-g { background:#14dc64; color:#002010; box-shadow:0 0 8px rgba(20,220,100,0.4); }
+
+    /* "Done by hand" toggle button on transfer-pair (purple/green when done) */
+    .rb-mark-btn { position:absolute; bottom:-9px; left:50%; transform:translateX(-50%); height:18px; min-width:48px; border-radius:9px; border:none; background:rgba(30,20,64,0.9); border:1px solid rgba(136,85,255,0.35); color:#aa88ff; font-size:8px; font-weight:800; letter-spacing:1.5px; cursor:pointer; z-index:5; padding:0 8px; font-family:'Courier New',monospace; transition:all 0.2s; white-space:nowrap; }
+    .rb-mark-btn:hover { border-color:rgba(136,85,255,0.7); color:#cc99ff; box-shadow:0 0 10px rgba(136,85,255,0.3); }
+    .rb-mark-btn.done { background:rgba(0,30,10,0.95); border-color:rgba(20,220,100,0.6); color:#14dc64; box-shadow:0 0 10px rgba(20,220,100,0.3); }
+
+    /* "Connected/cabled" toggle button */
+    .rb-cable-btn { position:absolute; bottom:-9px; left:50%; transform:translateX(-50%); height:18px; min-width:80px; border-radius:9px; border:none; background:rgba(160,20,20,0.9); border:1px solid rgba(255,60,60,0.45); color:#ffaaaa; font-size:8px; font-weight:800; letter-spacing:0.8px; cursor:pointer; z-index:5; padding:0 9px; font-family:'Courier New',monospace; transition:all 0.2s; white-space:nowrap; box-shadow:0 0 8px rgba(255,40,40,0.2); }
+    .rb-cable-btn:hover { border-color:rgba(255,80,80,0.7); color:#ffcccc; box-shadow:0 0 12px rgba(255,40,40,0.35); }
+    .rb-cable-btn.cabled { background:rgba(15,120,50,0.9); border-color:rgba(20,220,100,0.55); color:#aaffcc; box-shadow:0 0 10px rgba(20,220,100,0.3); }
+    .rb-cable-btn.cabled:hover { border-color:rgba(20,220,100,0.85); color:#ccffe0; box-shadow:0 0 14px rgba(20,220,100,0.45); }
+
+    /* Connected-state for delta section (inverted: starts green, toggles red) */
+    .rb-cable-btn-delta { position:absolute; bottom:-9px; left:50%; transform:translateX(-50%); height:18px; min-width:80px; border-radius:9px; border:none; background:rgba(15,120,50,0.9); border:1px solid rgba(20,220,100,0.55); color:#aaffcc; font-size:8px; font-weight:800; letter-spacing:0.8px; cursor:pointer; z-index:5; padding:0 9px; font-family:'Courier New',monospace; transition:all 0.2s; white-space:nowrap; box-shadow:0 0 8px rgba(20,220,100,0.2); }
+    .rb-cable-btn-delta:hover { border-color:rgba(20,220,100,0.85); color:#ccffe0; box-shadow:0 0 12px rgba(20,220,100,0.35); }
+    .rb-cable-btn-delta.cabled { background:rgba(160,20,20,0.9); border-color:rgba(255,60,60,0.45); color:#ffaaaa; box-shadow:0 0 8px rgba(255,40,40,0.2); }
+    .rb-cable-btn-delta.cabled:hover { border-color:rgba(255,80,80,0.7); color:#ffcccc; box-shadow:0 0 12px rgba(255,40,40,0.35); }
+
+    /* ── Team palette (right sidebar top) ───────────────────── */
+    .palette-header { display:flex; align-items:center; justify-content:space-between; padding:11px 14px; cursor:pointer; background:rgba(255,255,255,0.015); border-bottom:1px solid rgba(255,255,255,0.04); user-select:none; transition:background 0.2s; }
+    .palette-header:hover { background:rgba(255,255,255,0.03); }
+    .palette-header-left { display:flex; align-items:center; gap:8px; }
+    .side-hdr-label { font-size:10px; font-weight:700; letter-spacing:3px; color:#6666a0; font-family:'Courier New',monospace; }
+    .palette-toggle-arrow { width:22px; height:22px; display:flex; align-items:center; justify-content:center; border-radius:6px; background:rgba(74,127,255,0.08); border:1px solid rgba(74,127,255,0.18); color:#5577cc; font-size:9px; transition:transform 0.35s cubic-bezier(0.4,0,0.2,1),background 0.2s,color 0.2s,border-color 0.2s; flex-shrink:0; }
+    .palette-header:hover .palette-toggle-arrow { background:rgba(74,127,255,0.15); border-color:rgba(74,127,255,0.35); color:#7aacff; }
+    .palette-toggle-arrow.open { transform:rotate(180deg); }
+    .palette-collapsible { overflow-y:auto; overflow-x:hidden; max-height:calc(100vh - 200px); transition:max-height 0.4s cubic-bezier(0.4,0,0.2,1),opacity 0.35s cubic-bezier(0.4,0,0.2,1); opacity:1; scrollbar-face-color:#06060e; scrollbar-track-color:#06060e; scrollbar-arrow-color:#06060e; scrollbar-shadow-color:#06060e; scrollbar-darkshadow-color:#06060e; scrollbar-highlight-color:#06060e; scrollbar-3dlight-color:#06060e; }
+    .palette-collapsible.collapsed { max-height:0; opacity:0; }
+    .palette-inner { padding:10px 14px 0 14px; }
+
+    /* Single color slot in the palette */
+    .slot { display:flex; align-items:center; gap:7px; padding:3px 5px; border-radius:8px; border:1px solid transparent; cursor:pointer; margin-bottom:2px; transition:background 0.15s,border-color 0.15s; }
+    .slot:hover { background:rgba(255,255,255,0.03); }
+    .slot.active { background:rgba(74,127,255,0.06); border-color:rgba(74,127,255,0.15); }
+    .slot.slot-locked { background:rgba(255,204,68,0.04); border-color:rgba(255,204,68,0.12); }
+    .slot.slot-taken  { opacity:0.4; pointer-events:none; }
+
+    .s-color { width:20px; height:20px; border-radius:6px; flex-shrink:0; border:2px solid transparent; transition:border-color 0.15s,box-shadow 0.15s,transform 0.15s; cursor:pointer; }
+    .s-color.sel { border-color:rgba(255,255,255,0.85); box-shadow:0 0 10px rgba(255,255,255,0.2); transform:scale(1.1); }
+    .s-color.disabled-color { cursor:not-allowed; filter:brightness(0.45) saturate(0.2); pointer-events:none; }
+    .s-color.white-swatch { border-color:rgba(255,255,255,0.25); }
+    .s-color.white-swatch.sel { border-color:rgba(255,255,255,0.9); box-shadow:0 0 12px rgba(255,255,255,0.35); }
+
+    .s-name-wrap { flex:1; display:flex; align-items:center; gap:4px; min-width:0; }
+    input.s-name { flex:1; background:rgba(14,14,28,0.6); border:1px solid rgba(255,255,255,0.05); border-radius:6px; padding:4px 8px; color:#e8e8f8; font-family:'Segoe UI',Tahoma,sans-serif; font-size:11px; font-weight:500; outline:none; min-width:0; transition:border-color 0.2s; }
+    input.s-name::placeholder { color:#33334a; }
+    input.s-name:focus { border-color:rgba(74,127,255,0.4); }
+    input.s-name:read-only { color:#7070a0; background:rgba(10,10,20,0.4); cursor:not-allowed; user-select:none; pointer-events:none; }
+
+    /* Small lock icon next to each slot name */
+    .s-lock { flex-shrink:0; width:16px; height:16px; display:flex; align-items:center; justify-content:center; font-size:11px; line-height:1; cursor:pointer; color:#1e1e3a; transition:color 0.2s; user-select:none; }
+    .s-lock.lock-ready { color:#6688cc; cursor:pointer; }
+    .s-lock.lock-ready:hover { color:#aaccff; }
+    .s-lock.lock-on { color:#ffcc44; cursor:pointer; animation:lockPulse 2.5s ease-in-out infinite; }
+    .s-lock.lock-on:hover { color:#ff8888; animation:none; }
+    .s-lock.lock-other { color:#553322; cursor:not-allowed; }
+    .s-lock.lock-disabled { color:#1a1a2e; cursor:default; pointer-events:none; }
+    @keyframes lockPulse { 0%,100%{opacity:1} 50%{opacity:0.55} }
+
+    /* Clear-section buttons (top-right of each panel + bottom of palette) */
+    .btn-clear { border:1px solid rgba(255,60,60,0.2); border-radius:8px; padding:6px 14px; color:rgba(255,100,100,0.6); background:rgba(255,40,40,0.05); font-family:'Segoe UI',Tahoma,sans-serif; font-size:10px; font-weight:700; letter-spacing:1px; cursor:pointer; white-space:nowrap; transition:all 0.2s; }
+    .btn-clear:hover { background:rgba(255,40,40,0.12); color:#ff7070; border-color:rgba(255,60,60,0.4); }
+    .btn-clear-pal { width:calc(100% - 28px); margin:8px 14px 12px 14px; border:1px solid rgba(255,60,60,0.18); border-radius:10px; padding:9px; color:rgba(255,100,100,0.55); background:rgba(255,40,40,0.04); font-family:'Segoe UI',Tahoma,sans-serif; font-size:11px; font-weight:700; letter-spacing:1px; cursor:pointer; display:block; transition:all 0.2s; }
+    .btn-clear-pal:hover { background:rgba(255,40,40,0.1); color:#ff7070; border-color:rgba(255,60,60,0.4); }
+
+    /* ── Chat panel ─────────────────────────────────────────── */
+    .chat-head { padding:9px 12px; border-bottom:1px solid rgba(74,127,255,0.12); background:rgba(14,14,30,0.7); display:flex; align-items:center; gap:9px; flex-shrink:0; }
+    .chat-head-icon { width:24px; height:24px; border-radius:7px; background:linear-gradient(135deg,#4a7fff,#8855ff); display:flex; align-items:center; justify-content:center; font-size:11px; flex-shrink:0; box-shadow:0 0 10px rgba(74,127,255,0.3); }
+    .chat-head-title { font-size:10px; font-weight:700; letter-spacing:2.5px; color:#9090c0; font-family:'Courier New',monospace; }
+    .chat-live { margin-left:auto; display:flex; align-items:center; gap:5px; font-size:9px; font-weight:700; letter-spacing:1.5px; color:#14dc64; font-family:'Courier New',monospace; }
+    .chat-live-dot { width:6px; height:6px; border-radius:50%; background:#14dc64; box-shadow:0 0 6px #14dc64; animation:blink 2s ease-in-out infinite; }
+    .chat-messages { padding:10px; display:flex; flex-direction:column; gap:14px; min-width:0; }
+    .chat-msg { display:flex; flex-direction:column; gap:2px; animation:msgIn 0.2s ease; min-width:0; width:100%; padding-bottom:4px; border-bottom:1px solid rgba(255,255,255,0.03); }
+    @keyframes msgIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
+    .chat-msg-header { display:flex; align-items:center; gap:6px; min-width:0; }
+    .chat-msg-dot { width:8px; height:8px; border-radius:3px; flex-shrink:0; }
+    .chat-msg-name { font-size:10px; font-weight:700; letter-spacing:1px; font-family:'Courier New',monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:120px; }
+    .chat-msg-time { font-size:9px; color:#33334a; margin-left:auto; font-family:'Courier New',monospace; white-space:nowrap; flex-shrink:0; }
+    .chat-msg-body { font-size:12px; color:#c8c8e8; line-height:1.45; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.05); border-radius:0 9px 9px 9px; padding:6px 10px; margin-left:14px; word-break:break-all; overflow-wrap:anywhere; white-space:pre-wrap; display:block; width:calc(100% - 14px); max-width:calc(100% - 14px); box-sizing:border-box; min-width:0; overflow:hidden; }
+    .chat-system-msg { text-align:center; font-size:9px; color:#2a2a4a; font-family:'Courier New',monospace; letter-spacing:1.5px; padding:3px 0; }
+    .chat-locked { flex-shrink:0; padding:10px 12px; background:rgba(255,100,100,0.05); border-top:1px solid rgba(255,100,100,0.1); display:flex; align-items:center; gap:8px; font-size:10px; color:#664444; letter-spacing:1px; font-family:'Courier New',monospace; }
+    .chat-input-row { flex-shrink:0; padding:9px 10px; border-top:1px solid rgba(255,255,255,0.05); background:rgba(8,8,18,0.8); display:flex; gap:7px; align-items:flex-end; }
+    .chat-input { flex:1; background:rgba(14,14,28,0.8); border:1px solid rgba(255,255,255,0.07); border-radius:9px; padding:8px 11px; color:#e8e8f8; font-family:'Segoe UI',Tahoma,sans-serif; font-size:12px; outline:none; resize:none; max-height:80px; min-height:34px; transition:border-color 0.2s; line-height:1.4; }
+    .chat-input::placeholder { color:#2a2a48; }
+    .chat-input:focus { border-color:rgba(74,127,255,0.4); }
+    .chat-send { width:34px; height:34px; border-radius:9px; border:none; background:linear-gradient(135deg,#4a7fff,#8855ff); color:#fff; font-size:14px; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(74,127,255,0.3); flex-shrink:0; transition:opacity 0.15s,transform 0.1s; }
+    .chat-send:hover { opacity:0.85; transform:scale(1.06); }
+
+    /* ── Modal overlay (alerts, confirmations) ──────────────── */
+    .ov { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.75); z-index:9000; display:none; text-align:center; }
+    .ov.show { display:block; }
+    .ov-box { position:relative; z-index:1; background:rgba(14,14,28,0.95); border:1px solid rgba(255,255,255,0.06); border-radius:18px; padding:32px 36px; text-align:center; width:400px; box-shadow:0 24px 80px rgba(0,0,0,0.7); margin:13% auto 0 auto; }
+    .ov-ico { font-size:36px; margin-bottom:14px; }
+    .ov-tit { font-size:16px; font-weight:700; color:#e8e8f8; margin-bottom:9px; }
+    .ov-sub { font-size:12px; color:#8888aa; margin-bottom:24px; line-height:1.7; }
+    .ov-btns { display:flex; gap:10px; justify-content:center; }
+    .ov-btn { background:linear-gradient(135deg,#4a7fff,#8855ff); border:none; border-radius:10px; padding:11px 30px; color:#fff; font-size:12px; font-weight:800; cursor:pointer; letter-spacing:1.5px; transition:opacity 0.15s,transform 0.1s; }
+    .ov-btn:hover { opacity:0.88; transform:translateY(-1px); }
+    .ov-btn-cancel { background:transparent; border:1px solid rgba(255,255,255,0.06); border-radius:10px; padding:11px 24px; color:#8888aa; font-size:12px; font-weight:700; cursor:pointer; letter-spacing:1px; transition:all 0.15s; }
+    .ov-btn-cancel:hover { border-color:rgba(255,255,255,0.12); color:#b0b0cc; }
+    .ov-btn-danger { background:linear-gradient(135deg,#cc2030,#991020); border:none; border-radius:10px; padding:11px 24px; color:#fff; font-size:12px; font-weight:800; cursor:pointer; letter-spacing:1.5px; box-shadow:0 4px 20px rgba(200,32,48,0.3); transition:opacity 0.15s,transform 0.1s; }
+    .ov-btn-danger:hover { opacity:0.88; transform:translateY(-1px); }
+
+    /* Toast notifications (bottom-right) */
+    .toast-wrap { position:fixed; bottom:22px; right:22px; z-index:8000; display:flex; flex-direction:column-reverse; gap:8px; }
+    .toast { background:rgba(14,14,28,0.92); border:1px solid rgba(255,255,255,0.06); border-left:3px solid #4a7fff; padding:11px 18px; border-radius:10px; font-size:12px; font-weight:600; color:#d8d8f0; box-shadow:0 8px 32px rgba(0,0,0,0.5); animation:tin 0.25s ease; font-family:'Courier New',monospace; }
+    .toast.err { border-left-color:#ff3348; }
+    .toast.warn { border-left-color:#ffcc44; }
+    .toast.out { opacity:0; transition:opacity 0.35s; }
+    @keyframes tin { from{transform:translateX(16px);opacity:0} to{transform:none;opacity:1} }
+
+    /* Inline help tooltips next to section titles */
+    .help-icon { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; background:rgba(74,127,255,0.15); border:1px solid rgba(74,127,255,0.35); color:#7aacff; font-size:10px; font-weight:900; cursor:help; flex-shrink:0; margin-left:6px; font-family:'Courier New',monospace; transition:background 0.2s,border-color 0.2s; vertical-align:middle; }
+    .help-icon:hover { background:rgba(74,127,255,0.3); border-color:rgba(74,127,255,0.7); }
+    #helpTooltipBox { display:none; position:fixed; width:280px; background:rgba(10,10,22,0.98); border:1px solid rgba(74,127,255,0.3); border-radius:12px; padding:12px 14px; font-size:11px; color:#c8c8e8; line-height:1.65; font-family:'Segoe UI',Tahoma,sans-serif; box-shadow:0 8px 32px rgba(0,0,0,0.8); z-index:9999; pointer-events:none; white-space:normal; }
+    .help-tooltip-title { font-size:10px; font-weight:800; letter-spacing:2px; color:#7aacff; margin-bottom:7px; font-family:'Courier New',monospace; border-bottom:1px solid rgba(74,127,255,0.15); padding-bottom:6px; }
+
+    /* Window control buttons (custom because HTA has no native chrome) */
+    .win-btns { display:inline; margin-left:10px; }
+    .win-btn { display:inline-block; width:32px; height:32px; line-height:32px; text-align:center; font-size:15px; color:#666680; cursor:pointer; border-radius:8px; transition:all 0.15s; }
+    .win-btn:hover { background:rgba(255,255,255,0.06); color:#d8d8f0; }
+    .win-close:hover { background:rgba(255,40,40,0.2); color:#ff6666; }
+</style>
+</head>
+<body>
+
+<!-- ===== Header bar ===== -->
+<div class="hdr">
+    <div class="hdr-brand">
+        <div class="hdr-icon">R</div>
+        <div class="hdr-texts">
+            <span class="hdr-title">RMS</span>
+            <span class="hdr-sub">RACK MANAGER SYSTEM</span>
+        </div>
+    </div>
+    <div class="hdr-right">
+        <span class="lock-chip" id="lockSt">Synced</span>
+        <div class="live-chip"><div class="live-dot"></div>LIVE</div>
+        <div class="win-btns">
+            <span class="win-btn" onclick="window.moveTo(0,0);window.resizeTo(screen.availWidth,screen.availHeight);" title="Maximize">&#9744;</span>
+            <span class="win-btn win-close" onclick="window.close();" title="Close">&#10005;</span>
+        </div>
+    </div>
+    <div class="hdr-glow"></div>
+</div>
+
+<!-- Sync progress bar (animates during data writes) -->
+<div class="pbar"><div class="pbar-f" id="pbarF"></div></div>
+
+<div class="wrap">
+
+    <!-- ===== Main scrollable area: section panels ===== -->
+    <div class="main-outer">
+        <div class="main" id="mainScroll">
+
+            <!-- Section: STAGING (incoming racks waiting to be tested) -->
+            <div class="panel">
+                <div class="panel-head">
+                    <div class="ph-left">
+                        <div class="p-dot p-dot-staging"></div>
+                        <span class="p-title">AWAITING START</span>
+                        <span class="bdg bdg-staging">STAGING</span>
+                        <span class="help-icon" data-tip-title="STAGING" data-tip="Use this section when a fresh rack arrives and is placed in position.&#10;&#10;&#8226; Operator adds the rack position.&#10;&#8226; Test technician claims it with their color so the team knows who is working on it.">?</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:12px;">
+                        <button class="btn-clear" onclick="confirmClear('staging');">&#128465; CLEAR ALL</button>
+                        <span class="p-count" id="stagingC">0 rack</span>
+                    </div>
+                </div>
+                <div class="irow">
+                    <input class="tin" type="text" id="stagingI" placeholder="Station number..." onkeydown="if(event.keyCode===13)addR('staging');">
+                    <span class="tin-hint">101-930</span>
+                    <button class="btn btn-b" onclick="addR('staging');">+ ADD</button>
+                </div>
+                <div class="rgrid" id="stagingG"><div class="r-empty">NO ACTIVE RACK</div></div>
+            </div>
+
+            <!-- Section: TEST_DELTA (rack passed delta test, needs cabling/finalization) -->
+            <div class="panel">
+                <div class="panel-head">
+                    <div class="ph-left">
+                        <div class="p-dot p-dot-delta"></div>
+                        <span class="p-title">TEST_DELTA PASS</span>
+                        <span class="bdg bdg-delta">TEST_DELTA</span>
+                        <span class="help-icon" data-tip-title="TEST_DELTA PASS" data-tip="Use this section when a rack has passed the delta test.&#10;&#10;&#8226; Test technician adds the rack position.&#10;&#8226; Operator handles the connection and marks it passed.">?</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:12px;">
+                        <button class="btn-clear" onclick="confirmClear('delta');">&#128465; CLEAR ALL</button>
+                        <span class="p-count" id="deltaC">0 rack</span>
+                    </div>
+                </div>
+                <div class="irow">
+                    <input class="tin" type="text" id="deltaI" placeholder="Station number..." onkeydown="if(event.keyCode===13)addR('delta');">
+                    <span class="tin-hint">101-930</span>
+                    <button class="btn btn-b" onclick="addR('delta');">+ ADD</button>
+                </div>
+                <div class="rgrid" id="deltaG"><div class="r-empty">NO ACTIVE RACK</div></div>
+            </div>
+
+            <!-- Section: TRANSFER (rack moving from one station to another) -->
+            <div class="panel teal-panel">
+                <div class="panel-head">
+                    <div class="ph-left">
+                        <div class="p-dot p-dot-transfer"></div>
+                        <span class="p-title">RACK TRANSFER</span>
+                        <span class="bdg bdg-transfer">TRANSFER</span>
+                        <span class="help-icon" data-tip-title="TRANSFER" data-tip="Use this section when a rack must be moved to another station.&#10;&#10;&#8226; Operator marks the process and clicks DONE when finished.&#10;&#8226; Test technician supplies both station numbers.">?</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:12px;">
+                        <button class="btn-clear" onclick="confirmClear('transfer');">&#128465; CLEAR ALL</button>
+                        <span class="p-count" id="transferC">0 rack</span>
+                    </div>
+                </div>
+                <div class="irow">
+                    <input class="tin" type="text" id="transferI1" placeholder="From..." onkeydown="if(event.keyCode===13)document.getElementById('transferI2').focus();" style="max-width:120px;">
+                    <span class="tin-sep">&#8594;</span>
+                    <input class="tin" type="text" id="transferI2" placeholder="To..." onkeydown="if(event.keyCode===13)document.getElementById('transferTypeS').focus();" style="max-width:120px;">
+                    <select class="transfer-type-sel placeholder" id="transferTypeS" onchange="onTransferTypeChange();">
+                        <option value="">-- Type --</option>
+                        <option value="ALPHA">TEST_ALPHA</option>
+                        <option value="BETA">TEST_BETA</option>
+                        <option value="GAMMA">TEST_GAMMA</option>
+                        <option value="DELTA">TEST_DELTA</option>
+                    </select>
+                    <button class="btn-transfer-add btn-transfer-alpha" id="transferAddBtn" onclick="addPair();">+ ADD</button>
+                </div>
+                <div class="rgrid" id="transferG"><div class="r-empty">NO ACTIVE TRANSFER</div></div>
+            </div>
+
+            <!-- Section: TEST_ALPHA (rack with alpha test errors) -->
+            <div class="panel">
+                <div class="panel-head">
+                    <div class="ph-left">
+                        <div class="p-dot p-dot-alpha"></div>
+                        <span class="p-title">TEST_ALPHA ERROR</span>
+                        <span class="bdg bdg-alpha">TEST_ALPHA</span>
+                        <span class="help-icon" data-tip-title="TEST_ALPHA ERROR" data-tip="Add the rack position to claim ownership and avoid cross-work.">?</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:12px;">
+                        <button class="btn-clear" onclick="confirmClear('alpha');">&#128465; CLEAR ALL</button>
+                        <span class="p-count" id="alphaC">0 rack</span>
+                    </div>
+                </div>
+                <div class="irow">
+                    <input class="tin" type="text" id="alphaI" placeholder="Station number..." onkeydown="if(event.keyCode===13)addR('alpha');">
+                    <span class="tin-hint">101-930</span>
+                    <button class="btn btn-b" onclick="addR('alpha');">+ ADD</button>
+                </div>
+                <div class="rgrid" id="alphaG"><div class="r-empty">NO ACTIVE RACK</div></div>
+            </div>
+
+            <!-- Section: TEST_BETA (rack with beta test errors) -->
+            <div class="panel">
+                <div class="panel-head">
+                    <div class="ph-left">
+                        <div class="p-dot p-dot-beta"></div>
+                        <span class="p-title">TEST_BETA ERROR</span>
+                        <span class="bdg bdg-beta">TEST_BETA</span>
+                        <span class="help-icon" data-tip-title="TEST_BETA ERROR" data-tip="Add the rack position to claim ownership and avoid cross-work.">?</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:12px;">
+                        <button class="btn-clear" onclick="confirmClear('beta');">&#128465; CLEAR ALL</button>
+                        <span class="p-count" id="betaC">0 rack</span>
+                    </div>
+                </div>
+                <div class="irow">
+                    <input class="tin" type="text" id="betaI" placeholder="Station number..." onkeydown="if(event.keyCode===13)addR('beta');">
+                    <span class="tin-hint">101-930</span>
+                    <button class="btn btn-b" onclick="addR('beta');">+ ADD</button>
+                </div>
+                <div class="rgrid" id="betaG"><div class="r-empty">NO ACTIVE RACK</div></div>
+            </div>
+
+            <!-- Section: TEST_GAMMA (rack with gamma test errors) -->
+            <div class="panel">
+                <div class="panel-head">
+                    <div class="ph-left">
+                        <div class="p-dot p-dot-gamma"></div>
+                        <span class="p-title">TEST_GAMMA ERROR</span>
+                        <span class="bdg bdg-gamma">TEST_GAMMA</span>
+                        <span class="help-icon" data-tip-title="TEST_GAMMA ERROR" data-tip="Add the rack position to claim ownership and avoid cross-work.">?</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:12px;">
+                        <button class="btn-clear" onclick="confirmClear('gamma');">&#128465; CLEAR ALL</button>
+                        <span class="p-count" id="gammaC">0 rack</span>
+                    </div>
+                </div>
+                <div class="irow">
+                    <input class="tin" type="text" id="gammaI" placeholder="Station number..." onkeydown="if(event.keyCode===13)addR('gamma');">
+                    <span class="tin-hint">101-930</span>
+                    <button class="btn btn-b" onclick="addR('gamma');">+ ADD</button>
+                </div>
+                <div class="rgrid" id="gammaG"><div class="r-empty">NO ACTIVE RACK</div></div>
+            </div>
+
+        </div>
+
+        <!-- Custom main-area scrollbar (drawn on top, native one is hidden) -->
+        <div class="scr-bar" id="scrBar">
+            <div class="scr-handle" id="scrHandle"></div>
+        </div>
+    </div>
+
+    <!-- ===== Right side panel: team palette + chat ===== -->
+    <div class="side">
+
+        <div class="side-palette-area">
+            <div class="palette-header" id="paletteHeader" onclick="togglePalette();">
+                <div class="palette-header-left"><span class="side-hdr-label">&#9654; TEAM PALETTE</span></div>
+                <div class="palette-toggle-arrow open" id="paletteArrow">&#9660;</div>
+            </div>
+            <div class="palette-collapsible" id="paletteCollapsible">
+                <div class="palette-inner" id="pS"></div>
+                <button class="btn-clear-pal" onclick="confirmClear('palette');">&#128465; CLEAR ALL</button>
+            </div>
+        </div>
+
+        <div class="side-chat-area">
+            <div class="chat-head">
+                <div class="chat-head-icon">&#128172;</div>
+                <span class="chat-head-title">TEAM CHAT</span>
+                <div class="chat-live"><div class="chat-live-dot"></div>LIVE</div>
+            </div>
+            <div class="chat-scroll-wrap">
+                <div class="chat-clip" id="chatClip">
+                    <div class="chat-messages-outer" id="chatMessagesOuter">
+                        <div class="chat-messages" id="chatMessages">
+                            <div class="chat-system-msg">&#9135;&#9135; CHAT STARTED &#9135;&#9135;</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="chat-scr-col">
+                    <button class="chat-scr-btn" id="chatScrUp">&#9650;</button>
+                    <div class="chat-scr-track" id="chatScrTrack">
+                        <div class="chat-scr-handle" id="chatScrHandle"></div>
+                    </div>
+                    <button class="chat-scr-btn" id="chatScrDown">&#9660;</button>
+                </div>
+            </div>
+            <div id="chatLockedBar" class="chat-locked" style="display:none;">
+                <span>&#128274; Pick a color and enter your name first!</span>
+            </div>
+            <div class="chat-input-row" id="chatInputRow">
+                <textarea class="chat-input" id="chatInput" placeholder="Message..." rows="1"
+                    onkeydown="chatKeyDown(event);"
+                    oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,80)+'px';"></textarea>
+                <button class="chat-send" onclick="sendChat();">&#10148;</button>
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+<!-- ===== Generic alert overlay ===== -->
+<div class="ov" id="oO" onclick="cP();">
+    <div class="ov-box" onclick="event.stopPropagation?event.stopPropagation():(window.event?window.event.cancelBubble=true:null);">
+        <div class="ov-ico" id="oI">&#9888;</div>
+        <div class="ov-tit" id="oT"></div>
+        <div class="ov-sub" id="oS"></div>
+        <div class="ov-btns"><button class="ov-btn" onclick="cP();">OK</button></div>
+    </div>
+</div>
+
+<!-- ===== Confirm-clear overlay ===== -->
+<div class="ov" id="oCnf">
+    <div class="ov-box">
+        <div class="ov-ico">&#128465;</div>
+        <div class="ov-tit">Delete all items?</div>
+        <div class="ov-sub" id="oCnfSub"></div>
+        <div class="ov-btns">
+            <button class="ov-btn-cancel" onclick="document.getElementById('oCnf').className='ov';">CANCEL</button>
+            <button class="ov-btn-danger" id="oCnfOk">YES, DELETE</button>
+        </div>
+    </div>
+</div>
+
+<div class="toast-wrap" id="tW"></div>
+<div id="helpTooltipBox"></div>
+<script>
+// ════════════════════════════════════════════════════════════════
+//  RMS v11.0 - Distributed file-based architecture
+//
+//  Storage layout (on a shared network drive):
+//    data.json            -> rack lists per section (rare writes, lock-protected)
+//    data.lock            -> short-lived lock file for data.json
+//    data_backup.json     -> copy of last good state, restored if data.json is corrupt
+//    chat.json            -> team chat messages (lock-protected)
+//    chat.lock            -> short-lived lock file for chat.json
+//    colors\slot_X.json   -> per-user identity + claims (only that user writes!)
+//
+//  Why this works without a server:
+//   - data.json is written infrequently (only on add/remove/clear) -> low contention
+//   - colors\slot_X.json is written by exactly one user -> impossible to race
+//   - chat.json uses optimistic file-locking with a 3s stale-lock timeout
+//   - Every client polls every 4-6 seconds and re-renders sections that changed
+//     (changes detected by hashing file contents - cheap, no diff parsing).
+// ════════════════════════════════════════════════════════════════
+
+// ── Configuration ────────────────────────────────────────────────
+var POLL = 4000;        // data.json + slot files poll interval (ms)
+var CHAT_POLL = 6000;   // chat.json poll interval (ms)
+var PBAR_TICK = 100;    // sync progress bar animation tick (ms)
+
+var DFNAME    = 'data.json';
+var BKNAME    = 'data_backup.json';
+var LKNAME    = 'data.lock';
+var CHATNAME  = 'chat.json';
+var CHAT_LKNAME = 'chat.lock';
+var COLORS_DIR  = 'colors';
+
+var LOCK_TIMEOUT = 3000; // stale-lock threshold (ms)
+var MAX_RETRY    = 15;
+var RETRY_DELAY  = 150;
+
+var MAX_RACKS = 60;      // safety cap per section
+var MAX_CHAT  = 200;     // chat history rolling buffer size
+
+// Valid station number ranges (each pair = [from, to] inclusive).
+// Server racks live in physical aisles whose numbering is non-contiguous.
+var VALID_RANGES = [
+    [101,133],[201,231],[301,331],[401,428],[501,525],
+    [614,625],[727,732],[825,830],[925,930]
+];
+
+// Available identity colors (technicians pick one each).
+var COLORS = [
+    {h:'#4a90ff', n:'Blue'},        {h:'#18e870', n:'Green'},
+    {h:'#ff5530', n:'Tangerine'},   {h:'#c055ff', n:'Purple'},
+    {h:'#00d8b8', n:'Turquoise'},   {h:'#ff2888', n:'Pink'},
+    {h:'#ff9020', n:'Orange'},      {h:'#7aacff', n:'Steel Blue'},
+    {h:'#22e898', n:'Mint'},        {h:'#ff5565', n:'Coral'},
+    {h:'#aa88ff', n:'Lavender'},    {h:'#00ccee', n:'Cyan'},
+    {h:'#ffffff', n:'White'},       {h:'#ff0000', n:'Red'},
+    {h:'#ffd700', n:'Gold'},        {h:'#8b008b', n:'Dark Purple'},
+    {h:'#00fa9a', n:'Emerald'},     {h:'#dc143c', n:'Crimson'}
+];
+
+// Maps a transfer target type -> button styling (drives the Add button color)
+var TRANSFER_TYPE_CFG = {
+    'ALPHA': { btnCls:'btn-transfer-alpha', freeCls:'rb-transfer-alpha-free' },
+    'BETA':  { btnCls:'btn-transfer-beta',  freeCls:'rb-transfer-beta-free'  },
+    'GAMMA': { btnCls:'btn-transfer-gamma', freeCls:'rb-transfer-gamma-free' },
+    'DELTA': { btnCls:'btn-transfer-delta', freeCls:'rb-transfer-delta-free' }
+};
+
+// All sections this app manages (used by sync + clear-all).
+var ALL_SECTIONS = ['staging','delta','transfer','alpha','beta','gamma'];
+
+// ── FileSystem & path helpers ────────────────────────────────────
+var fso = new ActiveXObject('Scripting.FileSystemObject');
+var _basePath = ''; // memoized
+
+// Returns the directory containing this .hta file (where all state lives).
+function gBase() {
+    if (_basePath) return _basePath;
+    var p = document.location.pathname;
+    if (p.charAt(0) === '/') p = p.substr(1);
+    p = p.replace(/\//g, '\\');
+    _basePath = fso.GetParentFolderName(p);
+    return _basePath;
+}
+function gDP()        { return gBase() + '\\' + DFNAME; }
+function gBP()        { return gBase() + '\\' + BKNAME; }
+function gLP()        { return gBase() + '\\' + LKNAME; }
+function gCP()        { return gBase() + '\\' + CHATNAME; }
+function gCLP()       { return gBase() + '\\' + CHAT_LKNAME; }
+function gColDir()    { return gBase() + '\\' + COLORS_DIR; }
+function gSlotPath(s) { return gColDir() + '\\slot_' + s + '.json'; }
+
+// ── Application state (in-memory mirror of disk) ─────────────────
+var cU = null;          // current user: { name, color, slot } or null if not signed in
+var D = {               // disk state (data.json contents)
+    staging_racks:  [],
+    delta_racks:    [],
+    transfer_racks: [], // entries: { key, from, to, type, done, timestamp }
+    alpha_racks:    [],
+    beta_racks:     [],
+    gamma_racks:    []
+};
+
+// All known users keyed by slot index. Each value:
+//   { name, color, locked, claims:{section:[stationIds]}, done:{} }
+var colorSlots = {};
+
+// Per-rack flags managed locally (not in data.json on purpose - they're transient UI):
+var cableData = {};      // staging-section: rack "connected/cabled" toggle
+var cableDeltaData = {};   // delta-section: same toggle, inverted default
+
+// Hashes used to detect file changes during polling (avoids re-renders if nothing changed).
+var lastDataHash = '';
+var lastChatHash = '';
+var lastSlotHashes = {};
+
+// Misc UI state
+var pendingClearTarget = null; // section name pending confirm-clear, e.g. 'transfer'
+var chatPollT = null;          // chat poll timer handle
+var rP = 0;                    // sync progress bar value (0..100)
+var chatScrUpdFn = null;       // chat scrollbar update callback (set during init)
+
+// Returns true only if the current user has fully logged in (color picked + name committed).
+// Tentative states (color picked but no name yet) return false.
+function isLoggedIn() {
+    return !!(cU && cU.locked && cU.name);
+}
+
+// Standard "must log in first" guard. Returns true if blocked.
+// Shows a toast and returns true if not logged in; otherwise returns false.
+function blockIfNotLoggedIn() {
+    if (!isLoggedIn()) {
+        toast('Pick a color first!', 'warn');
+        return true;
+    }
+    return false;
+}
+
+// Cheap rolling hash (DJB2-ish). Used only to detect "did this string change?".
+function simpleHash(s) {
+    var h = 0, i, c;
+    for (i = 0; i < s.length; i++) {
+        c = s.charCodeAt(i);
+        h = ((h << 5) - h) + c;
+        h = h & h;
+    }
+    return String(h);
+}
+
+// Read a UTF-16 text file in one shot. Returns '' on missing/error.
+function readRaw(path) {
+    try {
+        if (fso.FileExists(path)) {
+            var f = fso.OpenTextFile(path, 1, false, -1);
+            var c = f.ReadAll();
+            f.Close();
+            return c || '';
+        }
+    } catch (e) {}
+    return '';
+}
+
+// Atomically (best-effort on Windows) overwrite a file with UTF-16 text.
+function writeFile(path, txt) {
+    try {
+        var f = fso.CreateTextFile(path, true, true);
+        f.Write(txt);
+        f.Close();
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+function ensureDir(dir) {
+    try { if (!fso.FolderExists(dir)) fso.CreateFolder(dir); } catch (e) {}
+}
+
+// ── Optimistic file locking (data.json + chat.json) ──────────────
+// A lock file contains a millisecond timestamp written when the lock was acquired.
+// If the timestamp is older than LOCK_TIMEOUT, the lock is considered stale
+// (the previous holder probably crashed) and may be ignored.
+function isLocked(lp) {
+    if (!fso.FileExists(lp)) return false;
+    try {
+        var f = fso.OpenTextFile(lp, 1, false, -1);
+        var ts = parseInt(f.ReadAll(), 10);
+        f.Close();
+        if (isNaN(ts)) return false;
+        return (new Date().getTime() - ts) < LOCK_TIMEOUT;
+    } catch (e) { return false; }
+}
+function acquireLock(lp) {
+    try {
+        var f = fso.CreateTextFile(lp, true, true);
+        f.Write(String(new Date().getTime()));
+        f.Close();
+        return true;
+    } catch (e) { return false; }
+}
+function releaseLock(lp) {
+    try { if (fso.FileExists(lp)) fso.DeleteFile(lp); } catch (e) {}
+}
+
+// Updates the top-right "lock status" chip.
+function setLockStatus(v) {
+    var el = document.getElementById('lockSt');
+    if (!el) return;
+    if (v) {
+        el.className = 'lock-chip locked';
+        el.innerText = 'WRITING...';
+    } else {
+        el.className = 'lock-chip';
+        el.innerText = 'Synced';
+    }
+}
+
+// ── data.json: rack-list read/write ──────────────────────────────
+function loadData() {
+    var raw = readRaw(gDP());
+    if (!raw || raw.length < 3) {
+        // Try the backup if main file is missing or truncated.
+        raw = readRaw(gBP());
+        if (raw && raw.length > 2) toast('Restored from backup', 'warn');
+    }
+    var d;
+    try { d = JSON.parse(raw); } catch (e) { d = {}; }
+
+    // Defensive: ensure all expected lists exist (handles fresh install + schema drift).
+    if (!d.staging_racks)  d.staging_racks  = [];
+    if (!d.delta_racks)    d.delta_racks    = [];
+    if (!d.transfer_racks) d.transfer_racks = [];
+    if (!d.alpha_racks)    d.alpha_racks    = [];
+    if (!d.beta_racks)     d.beta_racks     = [];
+    if (!d.gamma_racks)    d.gamma_racks    = [];
+    return d;
+}
+
+function saveData(d) {
+    var js = JSON.stringify(d, null, 2);
+    writeFile(gBP(), js); // write backup *first* so a crash mid-save can't lose data
+    writeFile(gDP(), js);
+    lastDataHash = simpleHash(js);
+}
+
+// ── colors\slot_X.json: per-user identity + claims ──────────────
+// Schema: { name, color, locked, claims:{section:[ids]}, done:{} }
+function loadSlot(s) {
+    var raw = readRaw(gSlotPath(s));
+    if (!raw || raw.length < 3) return null;
+    try { return JSON.parse(raw); } catch (e) { return null; }
+}
+
+function saveSlot(s, obj) {
+    ensureDir(gColDir());
+    writeFile(gSlotPath(s), JSON.stringify(obj, null, 2));
+}
+
+function deleteSlot(s) {
+    try { if (fso.FileExists(gSlotPath(s))) fso.DeleteFile(gSlotPath(s)); } catch (e) {}
+}
+
+// Read every slot_X.json under colors\ into a {slotIndex: slotObj} map.
+function loadAllSlots() {
+    var result = {};
+    ensureDir(gColDir());
+    try {
+        var folder = fso.GetFolder(gColDir());
+        var files = new Enumerator(folder.Files);
+        for (; !files.atEnd(); files.moveNext()) {
+            var f  = files.item();
+            var nm = f.Name;
+            // Match exactly slot_<number>.json
+            if (nm.indexOf('slot_') === 0 && nm.indexOf('.json') === nm.length - 5) {
+                var sNum = parseInt(nm.replace('slot_', '').replace('.json', ''), 10);
+                if (!isNaN(sNum)) {
+                    var raw = readRaw(f.Path);
+                    try {
+                        var obj = JSON.parse(raw);
+                        if (obj) result[sNum] = obj;
+                    } catch (e) {}
+                }
+            }
+        }
+    } catch (e) {}
+    return result;
+}
+
+// Builds the "claim map" used at render time: for each section, a lookup
+// from rack key -> { name, color } of the technician currently working on it.
+function getClaimMap() {
+    var cm = { staging:{}, delta:{}, transfer:{}, alpha:{}, beta:{}, gamma:{} };
+    for (var s in colorSlots) {
+        var sl = colorSlots[s];
+        if (!sl || !sl.name) continue;
+        var claims = sl.claims || {};
+        for (var sec in claims) {
+            if (!cm[sec]) cm[sec] = {};
+            var arr = claims[sec] || [];
+            for (var i = 0; i < arr.length; i++) {
+                cm[sec][arr[i]] = { name: sl.name, color: sl.color };
+            }
+        }
+    }
+    return cm;
+}
+
+// Transfer-section "done" flags live in data.json, not in slot files,
+// because they're shared (any user toggles, everyone sees it).
+function getDoneMap() {
+    var dm = {};
+    for (var i = 0; i < D.transfer_racks.length; i++) {
+        dm[D.transfer_racks[i].key] = D.transfer_racks[i].done || false;
+    }
+    return dm;
+}
+
+// Returns true if a station number is already present in any of the
+// single-rack sections (staging, delta, alpha, beta, gamma). The transfer
+// section is intentionally excluded — a transfer entry represents a rack
+// in motion (from -> to), so it can legitimately overlap with a section
+// that holds the rack at one of those positions.
+//
+// Returns the section name where the conflict was found, or null if free.
+function findStationConflict(disk, stationNum, ignoreSection) {
+    var sections = ['staging', 'delta', 'alpha', 'beta', 'gamma'];
+    for (var i = 0; i < sections.length; i++) {
+        var sec = sections[i];
+        if (sec === ignoreSection) continue;
+        var lst = getList(disk, sec);
+        for (var j = 0; j < lst.length; j++) {
+            if (lst[j].station === stationNum) return sec;
+        }
+    }
+    return null;
+}
+
+// Helpers to indirect section name -> data.json list.
+function getList(disk, sec) {
+    if (sec === 'delta')    return disk.delta_racks;
+    if (sec === 'transfer') return disk.transfer_racks;
+    if (sec === 'alpha')    return disk.alpha_racks;
+    if (sec === 'beta')     return disk.beta_racks;
+    if (sec === 'gamma')    return disk.gamma_racks;
+    return disk.staging_racks; // 'staging'
+}
+function setList(disk, sec, lst) {
+    if (sec === 'delta')         disk.delta_racks    = lst;
+    else if (sec === 'transfer') disk.transfer_racks = lst;
+    else if (sec === 'alpha')    disk.alpha_racks    = lst;
+    else if (sec === 'beta')     disk.beta_racks     = lst;
+    else if (sec === 'gamma')    disk.gamma_racks    = lst;
+    else                         disk.staging_racks  = lst;
+}
+// ── Sync loop ────────────────────────────────────────────────────
+// Called every POLL ms. Cheap: only re-renders sections whose hash changed.
+function sync() {
+    // 1) data.json
+    var raw = readRaw(gDP());
+    var h = simpleHash(raw);
+    if (h !== lastDataHash) {
+        lastDataHash = h;
+        D = loadData();
+        for (var i = 0; i < ALL_SECTIONS.length; i++) rR(ALL_SECTIONS[i]);
+    }
+
+    // 2) Per-user slot files. Hash each one separately so we don't reload
+    //    the whole color palette unless something actually changed.
+    var changed = false;
+    var newSlots = loadAllSlots();
+    for (var j = 0; j < COLORS.length; j++) {
+        var slotRaw = readRaw(gSlotPath(j));
+        var h2 = simpleHash(slotRaw);
+        if (h2 !== lastSlotHashes[j]) {
+            lastSlotHashes[j] = h2;
+            changed = true;
+        }
+    }
+    if (changed) {
+        colorSlots = newSlots;
+        for (var k = 0; k < ALL_SECTIONS.length; k++) rR(ALL_SECTIONS[k]);
+        sPN(); // refresh team palette panel
+    }
+}
+
+// ── data.json: transactional write with optimistic lock ─────────
+// All "atomic" mutations of rack lists go through here. Pattern:
+//   1. Wait for lock to be free (retry up to MAX_RETRY times)
+//   2. Acquire lock
+//   3. Reload disk state (so we don't clobber concurrent changes)
+//   4. Apply the change
+//   5. Save + release lock
+function dataWrite(change, attempt, cb) {
+    if (attempt === undefined) attempt = 0;
+    if (attempt >= MAX_RETRY) {
+        toast('HIBA: Lock timeout!', 'err');
+        releaseLock(gLP());
+        setLockStatus(false);
+        return;
+    }
+    if (isLocked(gLP())) {
+        setLockStatus(true);
+        setTimeout(function () { dataWrite(change, attempt + 1, cb); }, RETRY_DELAY);
+        return;
+    }
+    if (!acquireLock(gLP())) {
+        setTimeout(function () { dataWrite(change, attempt + 1, cb); }, RETRY_DELAY);
+        return;
+    }
+    setLockStatus(true);
+
+    var disk = loadData(); // re-read to get latest state under the lock
+
+    if (change.action === 'add') {
+        // Add a single station to a section (dedup by station number).
+        var lst = getList(disk, change.section);
+        if (lst.length >= MAX_RACKS) {
+            toast('Max ' + MAX_RACKS + '!', 'warn');
+            releaseLock(gLP()); setLockStatus(false); return;
+        }
+        // Reject if this station already exists in another section.
+        // We re-check here under the lock to defeat any TOCTOU race
+        // between the client-side check and the actual write.
+        var conflict = findStationConflict(disk, change.station, change.section);
+        if (conflict) {
+            toast('Station ' + change.station + ' is already in ' + conflict.toUpperCase(), 'warn');
+            releaseLock(gLP()); setLockStatus(false); return;
+        }
+        var ex = false;
+        for (var i = 0; i < lst.length; i++) if (lst[i].station === change.station) { ex = true; break; }
+        if (!ex) lst.push({ station: change.station, timestamp: new Date().toLocaleString() });
+        setList(disk, change.section, lst);
+
+    } else if (change.action === 'addPair') {
+        // Add a transfer entry: from -> to + target type.
+        if (disk.transfer_racks.length >= MAX_RACKS) {
+            toast('Max ' + MAX_RACKS + '!', 'warn');
+            releaseLock(gLP()); setLockStatus(false); return;
+        }
+        var pk = change.from + '|' + change.to + '|' + change.typ;
+        var pex = false;
+        for (var i = 0; i < disk.transfer_racks.length; i++) {
+            if (disk.transfer_racks[i].key === pk) { pex = true; break; }
+        }
+        if (!pex) {
+            disk.transfer_racks.push({
+                key:       pk,
+                from:      change.from,
+                to:        change.to,
+                typ:       change.typ,
+                done:      false,
+                timestamp: new Date().toLocaleString()
+            });
+        }
+
+    } else if (change.action === 'remove') {
+        // Remove a station from a section + clear all claims for it.
+        var lst = getList(disk, change.section);
+        var nl = [];
+        for (var i = 0; i < lst.length; i++) if (lst[i].station !== change.station) nl.push(lst[i]);
+        setList(disk, change.section, nl);
+        removeClaim(change.section, change.station);
+
+    } else if (change.action === 'removePair') {
+        var nl = [];
+        for (var i = 0; i < disk.transfer_racks.length; i++) {
+            if (disk.transfer_racks[i].key !== change.key) nl.push(disk.transfer_racks[i]);
+        }
+        disk.transfer_racks = nl;
+        removeClaim('transfer', change.key);
+
+    } else if (change.action === 'toggleDone') {
+        // Flip the "done" flag on a transfer entry (shared state).
+        for (var i = 0; i < disk.transfer_racks.length; i++) {
+            if (disk.transfer_racks[i].key === change.key) {
+                disk.transfer_racks[i].done = !disk.transfer_racks[i].done;
+                break;
+            }
+        }
+
+    } else if (change.action === 'clearSection') {
+        setList(disk, change.section, []);
+        clearSectionClaims(change.section); // also wipe claims from every slot file
+
+    } else if (change.action === 'clearAll') {
+        disk.staging_racks  = [];
+        disk.delta_racks    = [];
+        disk.transfer_racks = [];
+        disk.alpha_racks    = [];
+        disk.beta_racks     = [];
+        disk.gamma_racks    = [];
+        clearAllSlots();
+    }
+
+    saveData(disk);
+    releaseLock(gLP());
+    setLockStatus(false);
+    D = disk;
+    if (cb) cb();
+}
+
+// ── Per-user slot file write (no locking needed - single writer per file) ──
+// Action types: 'login' | 'logout' | 'claim' | 'unclaim' | 'clearMyClaims'
+//
+// Note: 'claim' and 'unclaim' both require the user to be fully logged in
+// (cU.locked === true). The caller is responsible for guarding via
+// blockIfNotLoggedIn() - we don't double-check here for performance.
+function slotWrite(action, data) {
+    if (!cU && action !== 'logout') return;
+    var s = (data && data.slot !== undefined) ? data.slot : (cU ? cU.slot : null);
+    if (s === null) return;
+
+    var obj = loadSlot(s) || {
+        name: '', color: '', locked: false,
+        claims: { staging:[], delta:[], transfer:[], alpha:[], beta:[], gamma:[] },
+        done: {}
+    };
+    if (!obj.claims) {
+        obj.claims = { staging:[], delta:[], transfer:[], alpha:[], beta:[], gamma:[] };
+    }
+
+    if (action === 'login') {
+        // Race-condition recheck: refresh other slots from disk in case
+        // another user committed the same name in the last few seconds
+        // (between our UI check and this write). The window is tiny -
+        // bounded by the sync poll interval - but the check is cheap.
+        var fresh = loadAllSlots();
+        var needle = (data.name || '').replace(/^\s+|\s+$/g, '').toLowerCase();
+        for (var k in fresh) {
+            var idx = parseInt(k, 10);
+            if (idx === s) continue;
+            var sl = fresh[k];
+            if (!sl || !sl.locked || !sl.name) continue;
+            if (sl.name.replace(/^\s+|\s+$/g, '').toLowerCase() === needle) {
+                toast('Name "' + data.name + '" was just taken by ' + sl.name, 'err');
+                // Roll back local tentative -> locked transition.
+                if (cU) cU.locked = false;
+                colorSlots = fresh;
+                sPN();
+                return;
+            }
+        }
+        obj.name = data.name;
+        obj.color = data.color;
+        obj.locked = true;
+
+    } else if (action === 'logout') {
+        obj.name = '';
+        obj.color = '';
+        obj.locked = false;
+        obj.claims = { staging:[], delta:[], transfer:[], alpha:[], beta:[], gamma:[] };
+
+    } else if (action === 'claim') {
+        var sec = data.section, id = data.id;
+        if (!obj.claims[sec]) obj.claims[sec] = [];
+        var ex = false;
+        for (var i = 0; i < obj.claims[sec].length; i++) if (obj.claims[sec][i] === id) { ex = true; break; }
+        if (!ex) obj.claims[sec].push(id);
+
+    } else if (action === 'unclaim') {
+        var sec = data.section, id = data.id, nl = [];
+        if (obj.claims[sec]) {
+            for (var i = 0; i < obj.claims[sec].length; i++) {
+                if (obj.claims[sec][i] !== id) nl.push(obj.claims[sec][i]);
+            }
+        }
+        obj.claims[sec] = nl;
+
+    } else if (action === 'clearMyClaims') {
+        obj.claims = { staging:[], delta:[], transfer:[], alpha:[], beta:[], gamma:[] };
+    }
+
+    saveSlot(s, obj);
+    // Update local mirror so we don't have to wait for the next sync tick.
+    colorSlots[s] = obj;
+    lastSlotHashes[s] = simpleHash(JSON.stringify(obj, null, 2));
+}
+
+// When a rack is removed, sweep every slot file to clear stale claims for it.
+// (Slow path - O(slots) - but rack removal is rare.)
+function removeClaim(sec, id) {
+    for (var i = 0; i < COLORS.length; i++) {
+        var obj = loadSlot(i);
+        if (!obj || !obj.claims || !obj.claims[sec]) continue;
+        var nl = [], changed = false;
+        for (var j = 0; j < obj.claims[sec].length; j++) {
+            if (obj.claims[sec][j] === id) changed = true;
+            else nl.push(obj.claims[sec][j]);
+        }
+        if (changed) { obj.claims[sec] = nl; saveSlot(i, obj); }
+    }
+    colorSlots = loadAllSlots();
+}
+
+function clearSectionClaims(sec) {
+    for (var i = 0; i < COLORS.length; i++) {
+        var obj = loadSlot(i);
+        if (!obj || !obj.claims) continue;
+        if (obj.claims[sec] && obj.claims[sec].length > 0) {
+            obj.claims[sec] = [];
+            saveSlot(i, obj);
+        }
+    }
+    colorSlots = loadAllSlots();
+}
+
+function clearAllSlots() {
+    for (var i = 0; i < COLORS.length; i++) deleteSlot(i);
+    colorSlots = {};
+    lastSlotHashes = {};
+    cU = null; // current user is gone too
+    updateChatLockBar();
+    // Also wipe chat history - "Clear All" is a global reset.
+    clearChat();
+}
+
+// Wipes chat.json under the chat lock. Best-effort: if the lock is held,
+// we retry briefly, but never block forever - clearAll should be snappy.
+function clearChat(attempt) {
+    if (attempt === undefined) attempt = 0;
+    if (attempt >= MAX_RETRY) {
+        // Give up gracefully - the user already saw the slots reset, and
+        // the next chat write will roll the buffer anyway.
+        toast('Could not clear chat (lock busy)', 'warn');
+        return;
+    }
+    if (isLocked(gCLP())) {
+        setTimeout(function () { clearChat(attempt + 1); }, RETRY_DELAY);
+        return;
+    }
+    if (!acquireLock(gCLP())) {
+        setTimeout(function () { clearChat(attempt + 1); }, RETRY_DELAY);
+        return;
+    }
+    saveChat([]);
+    releaseLock(gCLP());
+    lastChatHash = simpleHash(JSON.stringify([], null, 2));
+    renderChat([]);
+}
+
+// ── Chat ─────────────────────────────────────────────────────────
+function chatTimestamp() {
+    var d = new Date();
+    var h = d.getHours(), m = d.getMinutes(), s = d.getSeconds();
+    return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+}
+
+function loadChat() {
+    try {
+        var raw = readRaw(gCP());
+        if (raw && raw.length > 2) return JSON.parse(raw);
+    } catch (e) {}
+    return [];
+}
+
+function saveChat(msgs) {
+    writeFile(gCP(), JSON.stringify(msgs, null, 2));
+}
+
+function startChatPoll() {
+    if (chatPollT) clearInterval(chatPollT);
+    pollChat();
+    chatPollT = setInterval(pollChat, CHAT_POLL);
+}
+
+function updateChatLockBar() {
+    var l = document.getElementById('chatLockedBar');
+    var r = document.getElementById('chatInputRow');
+    if (!l || !r) return;
+    if (cU) {
+        l.style.display = 'none';
+        r.style.display = 'flex';
+    } else {
+        l.style.display = 'flex';
+        r.style.display = 'none';
+    }
+}
+
+// Re-poll chat.json. Re-renders only if hash changed.
+function pollChat() {
+    var raw = readRaw(gCP());
+    var h = simpleHash(raw);
+    if (h === lastChatHash) return;
+    lastChatHash = h;
+    renderChat(loadChat());
+}
+
+// Sends current input. Acquires chat lock, appends message, releases lock.
+function sendChat(attempt) {
+    if (!isLoggedIn()) {
+        toast('Pick a color first!', 'warn');
+        return;
+    }
+    var input = document.getElementById('chatInput');
+    var txt = input.value;
+    if (!txt) return;
+    txt = txt.replace(/^\s+|\s+$/g, '');
+    if (!txt) return;
+
+    if (attempt === undefined) attempt = 0;
+    if (attempt >= MAX_RETRY) { toast('Chat lock timeout!', 'err'); return; }
+    if (isLocked(gCLP())) { setTimeout(function(){ sendChat(attempt + 1); }, RETRY_DELAY); return; }
+    if (!acquireLock(gCLP())) { setTimeout(function(){ sendChat(attempt + 1); }, RETRY_DELAY); return; }
+
+    var msgs = loadChat();
+    msgs.push({
+        name: cU.name,
+        color: cU.color,
+        text: txt,
+        time: chatTimestamp()
+    });
+    // Roll the buffer to keep file size bounded.
+    if (msgs.length > MAX_CHAT) msgs = msgs.slice(msgs.length - MAX_CHAT);
+    saveChat(msgs);
+    releaseLock(gCLP());
+
+    input.value = '';
+    input.style.height = 'auto';
+    renderChat(msgs);
+    lastChatHash = simpleHash(JSON.stringify(msgs, null, 2));
+}
+
+// Enter sends, Shift+Enter inserts a newline.
+function chatKeyDown(ev) {
+    var e = ev || window.event;
+    if (e.keyCode === 13 && !e.shiftKey) {
+        if (e.preventDefault) e.preventDefault();
+        e.returnValue = false;
+        sendChat();
+        return false;
+    }
+    return true;
+}
+
+function escapeHtml(s) {
+    if (s === null || s === undefined) return '';
+    s = String(s);
+    return s.replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+}
+
+function renderChat(msgs) {
+    var box = document.getElementById('chatMessages');
+    if (!box) return;
+    var html = '<div class="chat-system-msg">&#9135;&#9135; CHAT &#9135;&#9135;</div>';
+    for (var i = 0; i < msgs.length; i++) {
+        var m = msgs[i];
+        var nameSafe = escapeHtml(m.name || '');
+        var bodySafe = escapeHtml(m.text || '');
+        var timeSafe = escapeHtml(m.time || '');
+        var col = (m.color && /^#[0-9a-fA-F]{6}$/.test(m.color)) ? m.color : '#7aacff';
+        html += '<div class="chat-msg">' +
+                  '<div class="chat-msg-header">' +
+                    '<div class="chat-msg-dot" style="background:' + col + '"></div>' +
+                    '<span class="chat-msg-name" style="color:' + col + '">' + nameSafe + '</span>' +
+                    '<span class="chat-msg-time">' + timeSafe + '</span>' +
+                  '</div>' +
+                  '<div class="chat-msg-body">' + bodySafe + '</div>' +
+                '</div>';
+    }
+    box.innerHTML = html;
+
+    // Auto-scroll to bottom and refresh custom scrollbar.
+    var clip = document.getElementById('chatClip');
+    var outer = document.getElementById('chatMessagesOuter');
+    if (clip && outer) {
+        outer.style.top = Math.min(0, clip.clientHeight - outer.scrollHeight) + 'px';
+    }
+    if (chatScrUpdFn) chatScrUpdFn();
+}
+// ── Toast notifications ─────────────────────────────────────────
+function toast(msg, kind) {
+    var w = document.getElementById('tW');
+    if (!w) return;
+    var t = document.createElement('div');
+    t.className = 'toast' + (kind ? ' ' + kind : '');
+    t.innerText = msg;
+    w.appendChild(t);
+    setTimeout(function () {
+        t.className += ' out';
+        setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 350);
+    }, 2800);
+}
+
+// ── Generic alert overlay ───────────────────────────────────────
+function showAlert(title, sub, icon) {
+    document.getElementById('oI').innerHTML = icon || '&#9888;';
+    document.getElementById('oT').innerText = title || '';
+    document.getElementById('oS').innerText = sub || '';
+    document.getElementById('oO').className = 'ov show';
+}
+function cP() {
+    document.getElementById('oO').className = 'ov';
+}
+
+// ── Station number validation ───────────────────────────────────
+// Stations live in a few non-contiguous numeric ranges - see VALID_RANGES.
+function validStation(n) {
+    if (isNaN(n)) return false;
+    n = parseInt(n, 10);
+    for (var i = 0; i < VALID_RANGES.length; i++) {
+        if (n >= VALID_RANGES[i][0] && n <= VALID_RANGES[i][1]) return true;
+    }
+    return false;
+}
+
+// ── Section input handlers (Add button / Enter key) ─────────────
+// Each section has an input <id+I> and grid <id+G>; this is the central handler.
+function addR(section) {
+    if (blockIfNotLoggedIn()) return;
+    var inp = document.getElementById(section + 'I');
+    if (!inp) return;
+    var v = inp.value;
+    if (v) v = v.replace(/^\s+|\s+$/g, '');
+    if (!v) { toast('Enter a station number!', 'warn'); return; }
+    if (!validStation(v)) {
+        showAlert('Invalid station number',
+            v + ' is not in any valid range. Valid ranges: 101-133, 201-231, 301-331, 401-428, 501-525, 614-625, 727-732, 825-830, 925-930.');
+        return;
+    }
+    var n = parseInt(v, 10);
+    // Fast client-side conflict check (the dataWrite path re-validates
+    // under the lock to prevent TOCTOU races between concurrent users).
+    var conflict = findStationConflict(D, n, section);
+    if (conflict) {
+        toast('Station ' + n + ' is already in ' + conflict.toUpperCase(), 'warn');
+        return;
+    }
+    inp.value = '';
+    dataWrite({ action: 'add', section: section, station: n }, 0, function () {
+        rR(section);
+    });
+}
+
+// Transfer-section: from -> to + type.
+function addPair() {
+    if (blockIfNotLoggedIn()) return;
+    var inp1 = document.getElementById('transferI1');
+    var inp2 = document.getElementById('transferI2');
+    var sel  = document.getElementById('transferTypeS');
+    if (!inp1 || !inp2 || !sel) return;
+    var v1 = (inp1.value || '').replace(/^\s+|\s+$/g, '');
+    var v2 = (inp2.value || '').replace(/^\s+|\s+$/g, '');
+    var typ = sel.value;
+    if (!v1 || !v2) { toast('Both station numbers are required!', 'warn'); return; }
+    if (!typ) { toast('Pick a target type!', 'warn'); return; }
+    if (!validStation(v1) || !validStation(v2)) {
+        showAlert('Invalid station number', 'One or both station numbers are not in any valid range.');
+        return;
+    }
+    var n1 = parseInt(v1, 10), n2 = parseInt(v2, 10);
+    inp1.value = ''; inp2.value = '';
+    sel.value = ''; sel.className = 'transfer-type-sel placeholder';
+    onTransferTypeChange();
+    dataWrite({ action: 'addPair', from: n1, to: n2, typ: typ }, 0, function () {
+        rR('transfer');
+    });
+}
+
+// Updates the Add-button color to match the selected transfer target type.
+function onTransferTypeChange() {
+    var sel = document.getElementById('transferTypeS');
+    var btn = document.getElementById('transferAddBtn');
+    if (!sel || !btn) return;
+    var v = sel.value;
+    if (!v) {
+        btn.className = 'btn-transfer-add btn-transfer-alpha';
+        sel.className = 'transfer-type-sel placeholder';
+        return;
+    }
+    sel.className = 'transfer-type-sel';
+    var cfg = TRANSFER_TYPE_CFG[v];
+    btn.className = 'btn-transfer-add active ' + (cfg ? cfg.btnCls : 'btn-transfer-alpha');
+}
+
+// ── Confirm-clear flow (delete all in section, or delete everything) ──
+function confirmClear(target) {
+    if (blockIfNotLoggedIn()) return;
+    pendingClearTarget = target;
+    var sub = document.getElementById('oCnfSub');
+    var ok  = document.getElementById('oCnfOk');
+    if (target === 'palette') {
+        sub.innerText = 'This will log out every user and clear all claims.';
+    } else {
+        sub.innerText = 'This will remove every rack from this section.';
+    }
+    ok.onclick = doConfirmedClear;
+    document.getElementById('oCnf').className = 'ov show';
+}
+
+function doConfirmedClear() {
+    var t = pendingClearTarget;
+    pendingClearTarget = null;
+    document.getElementById('oCnf').className = 'ov';
+    if (!t) return;
+    if (t === 'palette') {
+        dataWrite({ action: 'clearAll' }, 0, function () {
+            for (var i = 0; i < ALL_SECTIONS.length; i++) rR(ALL_SECTIONS[i]);
+            sPN();
+            updateChatLockBar();
+        });
+    } else {
+        dataWrite({ action: 'clearSection', section: t }, 0, function () { rR(t); });
+    }
+}
+
+// ── Rack render: free vs claimed styling ───────────────────────
+// Returns the CSS class for an "unclaimed" rack button in this section.
+function freeClassFor(section, transferType) {
+    if (section === 'staging')  return 'rb-staging-free';
+    if (section === 'delta')    return 'rb-delta-free';
+    if (section === 'alpha')    return 'rb-alpha-free';
+    if (section === 'beta')     return 'rb-beta-free';
+    if (section === 'gamma')    return 'rb-gamma-free';
+    if (section === 'transfer') {
+        var cfg = TRANSFER_TYPE_CFG[transferType];
+        return cfg ? cfg.freeCls : 'rb-transfer-alpha-free';
+    }
+    return 'rb-staging-free';
+}
+
+// Builds the inline style for a claimed rack button (uses the owner's color).
+// Strong, saturated background so the claimer is unmistakable at a glance.
+function claimedStyle(color) {
+    if (!color || !/^#[0-9a-fA-F]{6}$/.test(color)) color = '#4a7fff';
+    // Solid color with a subtle top-light gradient for depth.
+    return 'background:linear-gradient(145deg,' + color + ' 0%,' + color + ' 60%,' + darkenHex(color, 0.25) + ' 100%);' +
+           'border:2px solid ' + lightenHex(color, 0.3) + ';' +
+           'box-shadow:0 4px 24px ' + color + '66, inset 0 1px 0 rgba(255,255,255,0.25);';
+}
+
+// Lightens a hex color by mixing with white. amount in [0..1].
+function lightenHex(hex, amount) {
+    var r = parseInt(hex.substr(1,2), 16);
+    var g = parseInt(hex.substr(3,2), 16);
+    var b = parseInt(hex.substr(5,2), 16);
+    r = Math.round(r + (255 - r) * amount);
+    g = Math.round(g + (255 - g) * amount);
+    b = Math.round(b + (255 - b) * amount);
+    return '#' + ('0' + r.toString(16)).slice(-2) +
+                 ('0' + g.toString(16)).slice(-2) +
+                 ('0' + b.toString(16)).slice(-2);
+}
+
+// Darkens a hex color by mixing with black. amount in [0..1].
+function darkenHex(hex, amount) {
+    var r = parseInt(hex.substr(1,2), 16);
+    var g = parseInt(hex.substr(3,2), 16);
+    var b = parseInt(hex.substr(5,2), 16);
+    r = Math.round(r * (1 - amount));
+    g = Math.round(g * (1 - amount));
+    b = Math.round(b * (1 - amount));
+    return '#' + ('0' + r.toString(16)).slice(-2) +
+                 ('0' + g.toString(16)).slice(-2) +
+                 ('0' + b.toString(16)).slice(-2);
+}
+
+// Returns true if the given name is already used by a different logged-in
+// user. Comparison is case-insensitive and trims whitespace.
+// excludeSlot: skip this slot index (use when re-checking your own login).
+function isNameTaken(name, excludeSlot) {
+    if (!name) return false;
+    var needle = name.replace(/^\s+|\s+$/g, '').toLowerCase();
+    if (!needle) return false;
+    for (var s in colorSlots) {
+        var idx = parseInt(s, 10);
+        if (idx === excludeSlot) continue;
+        var sl = colorSlots[s];
+        if (!sl || !sl.locked || !sl.name) continue;
+        if (sl.name.replace(/^\s+|\s+$/g, '').toLowerCase() === needle) return true;
+    }
+    return false;
+}
+
+// Returns true if currently-signed-in user owns this claim entry.
+function isMine(entry) {
+    if (!cU || !entry) return false;
+    return entry.name === cU.name && entry.color === cU.color;
+}
+
+// Picks a readable text color (black or white) for a given background hex.
+// Uses standard luminance formula. Returns '#000' or '#fff'.
+function textColorFor(hex) {
+    if (!hex || !/^#[0-9a-fA-F]{6}$/.test(hex)) return '#fff';
+    var r = parseInt(hex.substr(1,2), 16);
+    var g = parseInt(hex.substr(3,2), 16);
+    var b = parseInt(hex.substr(5,2), 16);
+    // Relative luminance (0..255 scale, gamma-naive but good enough for pickers)
+    var luma = (0.299 * r + 0.587 * g + 0.114 * b);
+    return luma > 160 ? '#0a0a0a' : '#ffffff';
+}
+
+// Render a single rack section (the panel grid).
+function rR(section) {
+    var grid  = document.getElementById(section + 'G');
+    var count = document.getElementById(section + 'C');
+    if (!grid) return;
+
+    var list;
+    if (section === 'staging')  list = D.staging_racks;
+    else if (section === 'delta')    list = D.delta_racks;
+    else if (section === 'transfer') list = D.transfer_racks;
+    else if (section === 'alpha')    list = D.alpha_racks;
+    else if (section === 'beta')     list = D.beta_racks;
+    else if (section === 'gamma')    list = D.gamma_racks;
+    else list = [];
+
+    if (count) count.innerText = list.length + ' rack';
+
+    if (list.length === 0) {
+        grid.innerHTML = '<div class="r-empty">' +
+            (section === 'transfer' ? 'NO ACTIVE TRANSFER' : 'NO ACTIVE RACK') +
+        '</div>';
+        return;
+    }
+
+    var cm = getClaimMap();
+    var dm = getDoneMap();
+    var html = '';
+
+    if (section === 'transfer') {
+        // Transfer entries: from -> to with type label, plus DONE toggle.
+        for (var i = 0; i < list.length; i++) {
+            var e = list[i];
+            var owner = cm.transfer[e.key];
+            var done  = !!dm[e.key];
+            var freeCls = freeClassFor('transfer', e.typ);
+            var cls = 'rb-pair ' + (owner ? 'rb-claimed' : freeCls);
+            var styleAttr = '';
+            var textCol = '';
+            if (owner) {
+                textCol = textColorFor(owner.color);
+                styleAttr = ' style="' + claimedStyle(owner.color) + 'color:' + textCol + ';"';
+            }
+            var ownerNameStyle = owner ? (' style="color:' + textCol + ';text-shadow:0 1px 2px rgba(0,0,0,0.5);"') : '';
+            html += '<div class="' + cls + '"' + styleAttr +
+                    ' onclick="onPairClick(\'' + escapeHtml(e.key) + '\');"' +
+                    ' oncontextmenu="onPairRemove(event,\'' + escapeHtml(e.key) + '\');return false;">' +
+                      '<span class="rb-pair-num"' + ownerNameStyle + '>' + e.from + ' &#8594; ' + e.to + ' [' + escapeHtml(e.typ) + ']</span>' +
+                      (owner ? '<span class="rb-pair-own"' + ownerNameStyle + '>' + escapeHtml(owner.name) + '</span>' : '') +
+                      '<button class="rb-mark-btn' + (done ? ' done' : '') + '"' +
+                        ' onclick="onPairToggleDone(event,\'' + escapeHtml(e.key) + '\');">' +
+                        (done ? 'DONE' : 'MARK') +
+                      '</button>' +
+                    '</div>';
+        }
+    } else {
+        // Single-station sections: ordinary rack buttons.
+        for (var i = 0; i < list.length; i++) {
+            var st = list[i].station;
+            var owner = cm[section][st];
+            var freeCls = freeClassFor(section);
+            var cls = 'rb ' + (owner ? 'rb-claimed' : freeCls);
+            var styleAttr = '';
+            var textCol = '';
+            if (owner) {
+                textCol = textColorFor(owner.color);
+                styleAttr = ' style="' + claimedStyle(owner.color) + 'color:' + textCol + ';"';
+            }
+            var numStyle = owner ? (' style="color:' + textCol + ';text-shadow:0 1px 2px rgba(0,0,0,0.5);"') : '';
+            var ownStyle = owner ? (' style="color:' + textCol + ';text-shadow:0 1px 2px rgba(0,0,0,0.5);"') : '';
+
+            // staging + delta also have a "connected/cabled" toggle.
+            var toggleHtml = '';
+            if (section === 'staging') {
+                var on = !!cableData[st];
+                toggleHtml = '<button class="rb-cable-btn' + (on ? ' cabled' : '') + '"' +
+                             ' onclick="onCableToggle(event,\'staging\',' + st + ');">' +
+                             (on ? 'CABLED' : 'NOT CABLED') +
+                             '</button>';
+            } else if (section === 'delta') {
+                var on = !!cableDeltaData[st];
+                toggleHtml = '<button class="rb-cable-btn-delta' + (on ? ' cabled' : '') + '"' +
+                             ' onclick="onCableToggle(event,\'delta\',' + st + ');">' +
+                             (on ? 'NOT CABLED' : 'CABLED') +
+                             '</button>';
+            }
+
+            html += '<div class="' + cls + '"' + styleAttr +
+                    ' onclick="onRackClick(\'' + section + '\',' + st + ');"' +
+                    ' oncontextmenu="onRackRemove(event,\'' + section + '\',' + st + ');return false;">' +
+                      '<span class="rb-num"' + numStyle + '>' + st + '</span>' +
+                      (owner ? '<span class="rb-own"' + ownStyle + '>' + escapeHtml(owner.name) + '</span>' : '') +
+                      toggleHtml +
+                    '</div>';
+        }
+    }
+    grid.innerHTML = html;
+}
+
+// Cable-toggle is local-only (transient UI flag); doesn't persist to disk
+// because it's only meaningful during the current shift handoff window.
+function onCableToggle(ev, section, station) {
+    if (ev) {
+        if (ev.stopPropagation) ev.stopPropagation();
+        ev.cancelBubble = true;
+    }
+    if (blockIfNotLoggedIn()) return;
+    if (section === 'staging') {
+        cableData[station] = !cableData[station];
+    } else if (section === 'delta') {
+        cableDeltaData[station] = !cableDeltaData[station];
+    }
+    rR(section);
+}
+
+// Click on a rack: claim it (if free) or unclaim (if mine).
+function onRackClick(section, station) {
+    if (blockIfNotLoggedIn()) return;
+    var cm = getClaimMap();
+    var owner = cm[section][station];
+    if (!owner) {
+        slotWrite('claim', { section: section, id: station });
+        rR(section);
+    } else if (isMine(owner)) {
+        slotWrite('unclaim', { section: section, id: station });
+        rR(section);
+    } else {
+        toast(owner.name + ' is already working on it', 'warn');
+    }
+}
+
+// Right-click on a rack: remove it (with confirm).
+function onRackRemove(ev, section, station) {
+    if (ev && ev.stopPropagation) ev.stopPropagation();
+    if (ev) ev.cancelBubble = true;
+    if (blockIfNotLoggedIn()) return;
+    if (!confirm('Remove rack ' + station + '?')) return;
+    dataWrite({ action: 'remove', section: section, station: station }, 0, function () {
+        rR(section);
+    });
+}
+
+// Transfer-pair click: claim/unclaim by transfer key.
+function onPairClick(key) {
+    if (blockIfNotLoggedIn()) return;
+    var cm = getClaimMap();
+    var owner = cm.transfer[key];
+    if (!owner) {
+        slotWrite('claim', { section: 'transfer', id: key });
+        rR('transfer');
+    } else if (isMine(owner)) {
+        slotWrite('unclaim', { section: 'transfer', id: key });
+        rR('transfer');
+    } else {
+        toast(owner.name + ' is already working on it', 'warn');
+    }
+}
+
+function onPairRemove(ev, key) {
+    if (ev && ev.stopPropagation) ev.stopPropagation();
+    if (ev) ev.cancelBubble = true;
+    if (blockIfNotLoggedIn()) return;
+    if (!confirm('Remove this transfer?')) return;
+    dataWrite({ action: 'removePair', key: key }, 0, function () {
+        rR('transfer');
+    });
+}
+
+function onPairToggleDone(ev, key) {
+    if (ev) {
+        if (ev.stopPropagation) ev.stopPropagation();
+        ev.cancelBubble = true;
+    }
+    if (blockIfNotLoggedIn()) return;
+    dataWrite({ action: 'toggleDone', key: key }, 0, function () {
+        rR('transfer');
+    });
+}
+// ── Team palette panel (right sidebar) ──────────────────────────
+// Renders one slot per color in COLORS. A slot can be in one of these states:
+//   - empty (clickable swatch, claim this color)
+//   - tentative (current user picked color but hasn't entered name yet)
+//   - locked by current user (yellow lock icon, click to logout)
+//   - locked by someone else (dim row, read-only name)
+//
+// "Committed" = tentative-with-name OR locked. Once the user has invested
+// into the current slot (typed a name or locked it), other swatches are
+// disabled. If the user just clicked a swatch but typed nothing yet,
+// they can freely switch to any other free swatch.
+function sPN() {
+    var box = document.getElementById('pS');
+    if (!box) return;
+
+    // Before re-rendering, persist whatever is currently in the tentative
+    // name input into cU.name. Without this, a sync-triggered re-render
+    // would wipe out characters the user just typed.
+    if (cU && !cU.locked) {
+        var live = document.getElementById('tentativeNameInput');
+        if (live) cU.name = (live.value || '').replace(/^\s+|\s+$/g, '');
+    }
+
+    var html = '';
+
+    // Has the current user committed to a specific slot?
+    // If false, other swatches remain clickable so the user can change their mind.
+    var iAmCommitted = !!(cU && (cU.locked || (cU.name && cU.name.length > 0)));
+
+    for (var i = 0; i < COLORS.length; i++) {
+        var c = COLORS[i];
+        var slot = colorSlots[i] || null;
+
+        // Is this *the* current logged-in user's slot?
+        var isMineSlot      = !!(cU && cU.slot === i && cU.locked);
+        // Did the current user just pick this color but hasn't entered name yet?
+        var isTentativeSlot = !!(cU && cU.slot === i && !cU.locked);
+        // Is this slot occupied by some other logged-in user?
+        var isOtherLocked   = !!(slot && slot.locked && !isMineSlot);
+
+        var ownerName = (slot && slot.name) ? slot.name : '';
+
+        // Color swatch class (white needs a visible border).
+        var swatchCls = 's-color' + (c.h.toLowerCase() === '#ffffff' ? ' white-swatch' : '');
+        if (isMineSlot || isTentativeSlot) swatchCls += ' sel';
+        // Disabled if: someone else owns it, OR I'm committed to a different slot.
+        if (isOtherLocked || (iAmCommitted && !isMineSlot && !isTentativeSlot)) {
+            swatchCls += ' disabled-color';
+        }
+
+        // Slot row class:
+        var rowCls = 'slot';
+        if (isMineSlot)            rowCls += ' active';
+        else if (isTentativeSlot)  rowCls += ' active';
+        else if (isOtherLocked)    rowCls += ' slot-locked slot-taken';
+
+        // Lock icon + click handler:
+        var lockCls = 's-lock ';
+        var lockGlyph = '&#128274;'; // closed lock
+        if (isMineSlot) {
+            lockCls += 'lock-on';
+            lockGlyph = '&#128275;'; // open lock = click to logout
+        } else if (isTentativeSlot) {
+            lockCls += 'lock-ready'; // ready to confirm (after entering name)
+        } else if (isOtherLocked) {
+            lockCls += 'lock-other';
+        } else if (cU) {
+            // Already signed in elsewhere - can't claim another color
+            lockCls += 'lock-disabled';
+        } else {
+            lockCls += 'lock-ready';
+        }
+
+        // Name input behaviour by state:
+        //   - logged in (mine, locked):  READONLY + non-focusable
+        //   - tentative (mine):          editable, focused, ready for typing
+        //   - other-locked:              READONLY + non-focusable, shows owner
+        //   - empty (when I'm locked):   READONLY + non-focusable
+        //   - empty (when I'm not):      readonly placeholder of color name
+        //
+        // For non-focusable: `readonly` alone allows the input to take focus on
+        // click in IE (cursor blinks even if you can't type), which is
+        // confusing. We block this with onmousedown="return false" and
+        // tabindex="-1" so clicks never even reach the field.
+        var nameVal = '';
+        var nameAttrs = '';
+        var blockFocus = ' onmousedown="return false;" tabindex="-1"';
+        if (isMineSlot) {
+            // Locked: name is committed, can't be changed without logout
+            nameVal = cU.name;
+            nameAttrs = 'value="' + escapeHtml(nameVal) + '" readonly' + blockFocus;
+        } else if (isTentativeSlot) {
+            // Tentative: editable, this is the only field that accepts input
+            nameVal = cU.name || '';
+            nameAttrs = 'value="' + escapeHtml(nameVal) + '" onkeydown="onNameKey(event,' + i + ');" onblur="onNameBlur(' + i + ');" id="tentativeNameInput"';
+        } else {
+            nameVal = ownerName;
+            nameAttrs = 'value="' + escapeHtml(nameVal) + '" readonly' + blockFocus;
+        }
+
+        html += '<div class="' + rowCls + '">' +
+                  '<div class="' + swatchCls + '" style="background:' + c.h + '"' +
+                    ' onclick="onSwatchClick(' + i + ');" title="' + escapeHtml(c.n) + '"></div>' +
+                  '<div class="s-name-wrap">' +
+                    '<input class="s-name" type="text" placeholder="' + escapeHtml(c.n) + '" ' + nameAttrs + '>' +
+                    '<span class="' + lockCls + '" onclick="onLockClick(' + i + ');">' + lockGlyph + '</span>' +
+                  '</div>' +
+                '</div>';
+    }
+    box.innerHTML = html;
+
+    // If we just rendered a tentative slot, focus its name input.
+    var tentInput = document.getElementById('tentativeNameInput');
+    if (tentInput) {
+        try { tentInput.focus(); } catch (e) {}
+    }
+}
+
+// Click on a color swatch: starts the "tentative" login state.
+// The user must then type a name and press Enter (or click the lock).
+// Click on a color swatch:
+//   - If not signed in:                       start tentative login flow on this slot
+//   - If tentative on the same slot:          no-op (already there)
+//   - If tentative on a different slot, no name yet: switch tentative color (free)
+//   - If tentative with name typed:           reject — clear the name first
+//   - If logged in (locked):                  reject — must logout first
+function onSwatchClick(i) {
+    // Already locked-in: changing color requires a logout first.
+    if (cU && cU.locked) {
+        if (cU.slot !== i) {
+            toast('Logout first to switch color', 'warn');
+        }
+        return;
+    }
+    // Sync cU.name from the live input value before deciding (the user
+    // may have typed without firing onblur/keydown yet).
+    if (cU && !cU.locked) {
+        var live = document.getElementById('tentativeNameInput');
+        if (live) cU.name = (live.value || '').replace(/^\s+|\s+$/g, '');
+    }
+    // Tentative with a name typed: don't quietly drop the typed name.
+    if (cU && !cU.locked && cU.name && cU.slot !== i) {
+        toast('Clear the name first to switch color', 'warn');
+        return;
+    }
+    var slot = colorSlots[i];
+    if (slot && slot.locked) {
+        toast(slot.name + ' is using this color', 'warn');
+        return;
+    }
+    // Either no current user, or tentative state with empty name — pick this color.
+    cU = { name: '', color: COLORS[i].h, slot: i, locked: false };
+    sPN();
+    updateChatLockBar();
+}
+
+// Lock icon click:
+//   - If logged in on this slot      -> logout
+//   - If tentative on this slot      -> commit login (requires name)
+//   - Otherwise                      -> ignored
+function onLockClick(i) {
+    // Case 1: clicking the lock on my own logged-in slot = logout
+    if (cU && cU.slot === i && cU.locked) {
+        slotWrite('logout', { slot: i });
+        cU = null;
+        sPN();
+        for (var k = 0; k < ALL_SECTIONS.length; k++) rR(ALL_SECTIONS[k]);
+        updateChatLockBar();
+        toast('Logged out');
+        return;
+    }
+    // Case 2: clicking the lock on my tentative slot = commit login
+    if (cU && cU.slot === i && !cU.locked) {
+        // Read the current name from the input (in case the user typed but didn't press Enter)
+        var inputs = document.getElementById('pS').getElementsByTagName('input');
+        if (inputs && inputs[i]) {
+            var v = (inputs[i].value || '').replace(/^\s+|\s+$/g, '');
+            cU.name = v;
+        }
+        if (!cU.name) {
+            toast('Enter a name first!', 'warn');
+            return;
+        }
+        if (isNameTaken(cU.name, i)) {
+            toast('Name "' + cU.name + '" is already taken', 'warn');
+            return;
+        }
+        cU.locked = true;
+        slotWrite('login', { name: cU.name, color: cU.color, slot: i });
+        sPN();
+        updateChatLockBar();
+        toast('Logged in as ' + cU.name);
+        return;
+    }
+    // Case 3: clicking on another slot's lock - ignored
+}
+
+// Enter in the name field commits the login.
+// Backspace/escape on empty field cancels the tentative state.
+function onNameKey(ev, i) {
+    var e = ev || window.event;
+
+    // Enter = commit login
+    if (e.keyCode === 13) {
+        if (e.preventDefault) e.preventDefault();
+        e.returnValue = false;
+        var inp = e.target || e.srcElement;
+        var v = (inp.value || '').replace(/^\s+|\s+$/g, '');
+        if (!v) { toast('Enter a name first!', 'warn'); return false; }
+        if (isNameTaken(v, i)) {
+            toast('Name "' + v + '" is already taken', 'warn');
+            return false;
+        }
+        if (!cU || cU.slot !== i) {
+            cU = { name: v, color: COLORS[i].h, slot: i, locked: true };
+        } else {
+            cU.name = v;
+            cU.locked = true;
+        }
+        slotWrite('login', { name: v, color: cU.color, slot: i });
+        sPN();
+        updateChatLockBar();
+        for (var k = 0; k < ALL_SECTIONS.length; k++) rR(ALL_SECTIONS[k]);
+        toast('Logged in as ' + v);
+        return false;
+    }
+
+    // Escape = cancel tentative state (only if not yet locked)
+    if (e.keyCode === 27 && cU && cU.slot === i && !cU.locked) {
+        if (e.preventDefault) e.preventDefault();
+        cU = null;
+        sPN();
+        updateChatLockBar();
+        return false;
+    }
+    return true;
+}
+
+// Lose-focus on the name field: just keep tentative state in sync (no commit).
+function onNameBlur(i) {
+    if (!cU || cU.slot !== i || cU.locked) return;
+    var inputs = document.getElementById('pS').getElementsByTagName('input');
+    if (!inputs || !inputs[i]) return;
+    cU.name = (inputs[i].value || '').replace(/^\s+|\s+$/g, '');
+}
+
+// Collapse/expand the team palette.
+function togglePalette() {
+    var c = document.getElementById('paletteCollapsible');
+    var a = document.getElementById('paletteArrow');
+    if (!c || !a) return;
+    if (c.className.indexOf('collapsed') >= 0) {
+        c.className = 'palette-collapsible';
+        a.className = 'palette-toggle-arrow open';
+    } else {
+        c.className = 'palette-collapsible collapsed';
+        a.className = 'palette-toggle-arrow';
+    }
+}
+
+// ── Help tooltips (hover on ? icons) ────────────────────────────
+function setupHelpTooltips() {
+    var box = document.getElementById('helpTooltipBox');
+    if (!box) return;
+    var icons = document.getElementsByClassName('help-icon');
+
+    function show(ic) {
+        var title = ic.getAttribute('data-tip-title') || '';
+        var body  = ic.getAttribute('data-tip') || '';
+        body = body.replace(/\n/g, '<br>');
+        box.innerHTML = '<div class="help-tooltip-title">' + escapeHtml(title) + '</div>' + body;
+        box.style.display = 'block';
+        // Position below the icon, clipped to viewport.
+        var r = ic.getBoundingClientRect();
+        var x = r.left;
+        var y = r.bottom + 8;
+        if (x + 280 > window.innerWidth - 12) x = window.innerWidth - 292;
+        if (x < 8) x = 8;
+        box.style.left = x + 'px';
+        box.style.top  = y + 'px';
+    }
+    function hide() { box.style.display = 'none'; }
+
+    for (var i = 0; i < icons.length; i++) {
+        (function (ic) {
+            ic.onmouseover = function () { show(ic); };
+            ic.onmouseout  = function () { hide(); };
+        })(icons[i]);
+    }
+}
+
+// ── Custom main-area scrollbar ──────────────────────────────────
+// IE's native scrollbar is hidden by pushing .main 20px past the right edge;
+// we draw our own thin gradient bar in .scr-bar and sync it to scroll position.
+function setupMainScrollbar() {
+    var scrollEl = document.getElementById('mainScroll');
+    var bar      = document.getElementById('scrBar');
+    var handle   = document.getElementById('scrHandle');
+    if (!scrollEl || !bar || !handle) return;
+
+    function update() {
+        var sh = scrollEl.scrollHeight, ch = scrollEl.clientHeight;
+        if (sh <= ch) {
+            bar.style.display = 'none';
+            return;
+        }
+        bar.style.display = 'block';
+        var trackH = bar.clientHeight;
+        var ratio  = ch / sh;
+        var hH     = Math.max(28, Math.floor(trackH * ratio));
+        var maxTop = trackH - hH;
+        var top    = Math.floor((scrollEl.scrollTop / (sh - ch)) * maxTop);
+        handle.style.height = hH + 'px';
+        handle.style.top    = top + 'px';
+    }
+
+    scrollEl.onscroll = update;
+    setTimeout(update, 50);
+    setInterval(update, 500); // catch programmatic content changes
+
+    // Drag handle to scroll.
+    var dragging = false, startY = 0, startTop = 0;
+    handle.onmousedown = function (e) {
+        e = e || window.event;
+        dragging = true;
+        startY = e.clientY;
+        startTop = parseInt(handle.style.top || '0', 10);
+        if (e.preventDefault) e.preventDefault();
+        return false;
+    };
+    document.onmousemove = (function (orig) {
+        return function (e) {
+            e = e || window.event;
+            if (dragging) {
+                var trackH = bar.clientHeight;
+                var hH = handle.offsetHeight;
+                var maxTop = trackH - hH;
+                var newTop = Math.max(0, Math.min(maxTop, startTop + (e.clientY - startY)));
+                var sh = scrollEl.scrollHeight, ch = scrollEl.clientHeight;
+                scrollEl.scrollTop = (newTop / maxTop) * (sh - ch);
+                update();
+            }
+            if (orig) orig(e);
+        };
+    })(document.onmousemove);
+    document.onmouseup = (function (orig) {
+        return function (e) { dragging = false; if (orig) orig(e); };
+    })(document.onmouseup);
+}
+
+// ── Custom chat scrollbar ───────────────────────────────────────
+function setupChatScrollbar() {
+    var clip   = document.getElementById('chatClip');
+    var outer  = document.getElementById('chatMessagesOuter');
+    var track  = document.getElementById('chatScrTrack');
+    var handle = document.getElementById('chatScrHandle');
+    var btnUp  = document.getElementById('chatScrUp');
+    var btnDn  = document.getElementById('chatScrDown');
+    if (!clip || !outer || !track || !handle) return;
+
+    function getOffset() { return parseInt(outer.style.top || '0', 10); }
+    function setOffset(v) {
+        var ch = clip.clientHeight, oh = outer.scrollHeight;
+        var min = Math.min(0, ch - oh);
+        if (v > 0) v = 0;
+        if (v < min) v = min;
+        outer.style.top = v + 'px';
+        update();
+    }
+
+    function update() {
+        var ch = clip.clientHeight, oh = outer.scrollHeight;
+        if (oh <= ch) {
+            handle.style.display = 'none';
+            return;
+        }
+        handle.style.display = 'block';
+        var trackH = track.clientHeight;
+        var ratio  = ch / oh;
+        var hH     = Math.max(20, Math.floor(trackH * ratio));
+        var maxTop = trackH - hH;
+        var off    = -getOffset();
+        var maxOff = oh - ch;
+        var top    = Math.floor((off / maxOff) * maxTop);
+        handle.style.height = hH + 'px';
+        handle.style.top    = top + 'px';
+    }
+    chatScrUpdFn = update;
+
+    if (btnUp) btnUp.onclick = function () { setOffset(getOffset() + 30); };
+    if (btnDn) btnDn.onclick = function () { setOffset(getOffset() - 30); };
+
+    var dragging = false, startY = 0, startTop = 0;
+    handle.onmousedown = function (e) {
+        e = e || window.event;
+        dragging = true;
+        startY = e.clientY;
+        startTop = parseInt(handle.style.top || '0', 10);
+        if (e.preventDefault) e.preventDefault();
+        return false;
+    };
+    document.onmousemove = (function (orig) {
+        return function (e) {
+            e = e || window.event;
+            if (dragging) {
+                var trackH = track.clientHeight;
+                var hH = handle.offsetHeight;
+                var maxTop = trackH - hH;
+                var newTop = Math.max(0, Math.min(maxTop, startTop + (e.clientY - startY)));
+                var ch = clip.clientHeight, oh = outer.scrollHeight;
+                var maxOff = oh - ch;
+                setOffset(-((newTop / maxTop) * maxOff));
+            }
+            if (orig) orig(e);
+        };
+    })(document.onmousemove);
+    document.onmouseup = (function (orig) {
+        return function (e) { dragging = false; if (orig) orig(e); };
+    })(document.onmouseup);
+
+    // Mousewheel inside the chat panel scrolls our virtual offset.
+    if (clip.attachEvent) {
+        clip.attachEvent('onmousewheel', function () {
+            var d = window.event.wheelDelta;
+            setOffset(getOffset() + (d > 0 ? 40 : -40));
+            window.event.returnValue = false;
+        });
+    }
+    setTimeout(update, 50);
+    setInterval(update, 500);
+}
+
+// ── Sync progress bar (visual heartbeat) ────────────────────────
+// Animates left-to-right between sync ticks so users can see the app
+// is alive even when no data has changed.
+function setupProgressBar() {
+    var f = document.getElementById('pbarF');
+    if (!f) return;
+    setInterval(function () {
+        rP = (rP + 100 / (POLL / PBAR_TICK));
+        if (rP >= 100) rP = 0;
+        f.style.width = rP + '%';
+    }, PBAR_TICK);
+}
+
+// ── Application entry ───────────────────────────────────────────
+function init() {
+    ensureDir(gColDir());
+
+    // Initial state load.
+    D = loadData();
+    colorSlots = loadAllSlots();
+
+    // Initial render of all sections + palette.
+    for (var i = 0; i < ALL_SECTIONS.length; i++) rR(ALL_SECTIONS[i]);
+    sPN();
+    updateChatLockBar();
+
+    // Wire up the transfer-type select default state.
+    onTransferTypeChange();
+
+    // Initial chat fetch + start chat polling.
+    renderChat(loadChat());
+    lastChatHash = simpleHash(JSON.stringify(loadChat(), null, 2));
+    startChatPoll();
+
+    // Start the main sync loop.
+    sync();
+    setInterval(sync, POLL);
+
+    // UI extras.
+    setupHelpTooltips();
+    setupMainScrollbar();
+    setupChatScrollbar();
+    setupProgressBar();
+}
+
+// HTA fires onload before all elements are guaranteed laid out;
+// a small delay avoids occasional missing-element errors at startup.
+window.onload = function () {
+    setTimeout(init, 50);
+};
+</script>
+</body>
+</html>
